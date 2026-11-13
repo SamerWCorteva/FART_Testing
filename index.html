@@ -2630,7 +2630,11 @@ function wireGeoCard(t, again) {
   const w = document.getElementById('geo-walk'); if (!w) return;
   w.onclick = () => openTrialMap(t, again);
   const mini = document.getElementById('geo-mini'), cs = geoPts(t);
-  if (mini && cs.length) mini.innerHTML = outlineSvg(fitView(cs, 320, 200, 0.7), cs, true) + `<text x="8" y="16" font-size="11" fill="#5a6877">N ↑</text>`;
+  if (mini && cs.length) { // the same map as the walk screen (satellite / street when online, plain when offline)
+    const st = db.settings.mapStyle || 'sat', sat = st !== 'none', v = fitView(cs, 320, 200, 0.7);
+    mini.innerHTML = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + `<text x="8" y="16" font-size="12" font-weight="700" fill="${sat ? '#fff' : '#5a6877'}" style="${sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : ''}">N ↑</text>`
+      + (st === 'sat' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">Imagery © Esri</text>' : st === 'map' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#222" style="paint-order:stroke;stroke:#fff;stroke-width:2px;">© OpenStreetMap</text>' : '');
+  }
   const cp = document.getElementById('geo-copy');
   if (cp) cp.onclick = () => { const txt = `${t.trialId}\n${geoCopyText(t)}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); };
   const cl = document.getElementById('geo-clear');
