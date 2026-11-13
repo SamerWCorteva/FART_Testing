@@ -592,16 +592,21 @@ const ICON = {
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
 };
 /* ---------- haptics: a short tap when moving from plot to plot ---------- */
-function buzz(pattern, force) { // returns true when a tap was sent; force = ignore the on/off setting (used by the Test button)
-  if (!force && db.settings.haptics === false) return false;
-  try { if (typeof navigator.vibrate === 'function' && navigator.vibrate(pattern || 12)) return true; } catch (e) {} // Android and most desktop browsers
-  try { // iPhone / iPad (iOS 17.4+) have no vibrate(): flipping a hidden "switch" checkbox gives the system tap
+const isApple = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function buzzVibrate(pattern) { try { return typeof navigator.vibrate === 'function' && !!navigator.vibrate(pattern); } catch (e) { return false; } } // Android and most desktop browsers
+function buzzSwitch() { // iPhone / iPad (iOS 17.4+) have no vibrate(): flipping a hidden "switch" checkbox gives the system tap
+  try {
     let l = document.getElementById('hapt');
     if (!l) { l = document.createElement('label'); l.id = 'hapt'; l.setAttribute('aria-hidden', 'true'); l.style.display = 'none'; l.innerHTML = '<input type="checkbox" switch tabindex="-1">'; document.head.appendChild(l); }
-    l.click(); if (Array.isArray(pattern)) setTimeout(() => l.click(), 90);
-    return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  } catch (e) {}
-  return false;
+    l.click(); return true;
+  } catch (e) { return false; }
+}
+function buzz(pattern, force) { // returns true when a tap was sent; force = ignore the on/off setting (used by the Test button)
+  if (!force && db.settings.haptics === false) return false;
+  if (buzzVibrate(pattern || 35)) return true;
+  if (!buzzSwitch()) return false;
+  if (Array.isArray(pattern)) setTimeout(buzzSwitch, 110);
+  return true;
 }
 const dtTxt = ts => ts ? new Date(ts).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -893,6 +898,7 @@ function viewHome() {
       <p class="small muted">All data is saved in this browser on this device. Export a backup regularly, and use Restore to load it on another device.</p>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="contrast" ${db.settings.contrast ? 'checked' : ''}> ☀ Sunlight Mode (high contrast, easier to read outdoors)</label>
       <div class="arow" style="margin-bottom:12px"><label class="chk small"><input type="checkbox" id="hapticOn" ${db.settings.haptics !== false ? 'checked' : ''}> Haptic Feedback (vibrate when moving to the next plot)</label><button type="button" class="small" id="hapticTest">Test</button></div>
+      <p class="small muted" id="hapticInfo" style="margin:-6px 0 12px"></p>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="arrowbar" ${db.settings.arrowBar ? 'checked' : ''}> Show My Own ◀ ▲ ▼ ▶ Bar Above the Keyboard</label>
       <div class="actions">
         <button id="backup">Export Backup (.json)</button>
@@ -931,7 +937,16 @@ function viewHome() {
   const drx = document.getElementById('dr-new-x'); if (drx) drx.onclick = () => { if (confirm('Discard this unfinished trial? Everything you entered will be lost.')) { dropDraft('trial:new'); viewHome(); } };
   document.getElementById('sig-btn').onclick = () => openSignaturePad(() => viewHome());
   document.getElementById('hapticOn').onchange = e => { db.settings.haptics = e.target.checked; save(); if (e.target.checked) buzz(); };
-  document.getElementById('hapticTest').onclick = () => { const ok = buzz([40, 60, 40], true); toast(ok ? (db.settings.haptics === false ? 'Test sent – haptic feedback is switched off' : 'Test sent – did you feel it?') : 'This browser cannot vibrate. On iPhone it needs iOS 17.4 or later; also check the phone is not in silent / low-power mode.'); };
+  document.getElementById('hapticTest').onclick = () => {
+    const out = document.getElementById('hapticInfo'), v = typeof navigator.vibrate === 'function';
+    const ua = (navigator.userAgent.match(/(iPhone OS|CPU OS|Android) [\d_.]+/) || [''])[0].replace(/_/g, '.');
+    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'installed app' : 'browser tab';
+    let txt = `${ua || 'unknown OS'} · ${standalone} · vibrate(): ${v ? 'available' : 'not available'}${db.settings.haptics === false ? ' · NOTE: haptic feedback is switched off above' : ''}`;
+    out.textContent = txt + ' · Test 1 now…';
+    const r1 = v ? buzzVibrate([120]) : false;
+    setTimeout(() => { out.textContent = txt + ` · Test 1 (vibrate): ${v ? (r1 ? 'sent' : 'refused') : 'skipped'} · Test 2 now…`; buzzSwitch(); }, 1200);
+    setTimeout(() => { out.textContent = txt + ` · Test 1 (vibrate): ${v ? (r1 ? 'sent' : 'refused') : 'skipped'} · Test 2 (iPhone tap): sent. Which did you feel: 1, 2 or neither?`; }, 1700);
+  };
   document.getElementById('arrowbar').onchange = e => { db.settings.arrowBar = e.target.checked; save(); };
   document.getElementById('backup').onclick = () => { doBackup(); viewHome(); };
   const bk = document.getElementById('bk-now'); if (bk) bk.onclick = () => { doBackup(); viewHome(); };
@@ -1976,7 +1991,7 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
   function warnRange() { if (inputs.some(inp => outOfRange(a.types[inp.dataset.i], inp.value.trim()) === 'bad')) toast('A value is outside its expected range'); }
   function nextPlot(at) {
     warnRange();
-    if (idx === last) { buzz([25, 60, 25]); go(`${base}/review`); } else goPlot(idx + 1, at);
+    if (idx === last) { buzz([40, 70, 40]); go(`${base}/review`); } else goPlot(idx + 1, at);
   }
   function prevPlot(at) { if (idx > 0) goPlot(idx - 1, at); }
   function step(dir) {
@@ -2695,7 +2710,7 @@ function openTrialMap(t, after) {
     if (pos.acc > 20 && !confirm(`GPS accuracy is only ±${Math.round(pos.acc)} m right now. Mark this corner anyway?\n\n(Stand in the open and wait a few seconds for a better fix.)`)) return;
     t.geo = t.geo || { corners: [null, null, null, null] }; while (t.geo.corners.length < 4) t.geo.corners.push(null);
     t.geo.corners[i] = { lat: pos.lat, lon: pos.lon, acc: pos.acc, ts: Date.now() }; t.geo.ts = Date.now(); t.updated = Date.now(); save();
-    buzz([30, 40, 30]); view = null; panel(); draw();
+    buzz([50, 60, 50]); view = null; panel(); draw();
   }
   function status() {
     const a = q('#mp-acc');
