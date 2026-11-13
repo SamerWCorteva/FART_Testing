@@ -592,14 +592,16 @@ const ICON = {
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
 };
 /* ---------- haptics: a short tap when moving from plot to plot ---------- */
-function buzz(pattern) {
-  if (db.settings.haptics === false) return;
-  try { if (navigator.vibrate && navigator.vibrate(pattern || 12)) return; } catch (e) {}
-  try { // iPhones have no vibrate(): flipping a hidden "switch" checkbox gives the system tap (iOS 17.4+)
+function buzz(pattern, force) { // returns true when a tap was sent; force = ignore the on/off setting (used by the Test button)
+  if (!force && db.settings.haptics === false) return false;
+  try { if (typeof navigator.vibrate === 'function' && navigator.vibrate(pattern || 12)) return true; } catch (e) {} // Android and most desktop browsers
+  try { // iPhone / iPad (iOS 17.4+) have no vibrate(): flipping a hidden "switch" checkbox gives the system tap
     let l = document.getElementById('hapt');
-    if (!l) { l = document.createElement('label'); l.id = 'hapt'; l.setAttribute('aria-hidden', 'true'); l.style.cssText = 'position:fixed;left:-100px;top:0;width:1px;height:1px;opacity:0;pointer-events:none;'; l.innerHTML = '<input type="checkbox" switch tabindex="-1">'; document.body.appendChild(l); }
-    l.click();
+    if (!l) { l = document.createElement('label'); l.id = 'hapt'; l.setAttribute('aria-hidden', 'true'); l.style.display = 'none'; l.innerHTML = '<input type="checkbox" switch tabindex="-1">'; document.head.appendChild(l); }
+    l.click(); if (Array.isArray(pattern)) setTimeout(() => l.click(), 90);
+    return /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   } catch (e) {}
+  return false;
 }
 const dtTxt = ts => ts ? new Date(ts).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -890,6 +892,7 @@ function viewHome() {
       <h3>Backup &amp; Move Between Devices</h3>
       <p class="small muted">All data is saved in this browser on this device. Export a backup regularly, and use Restore to load it on another device.</p>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="contrast" ${db.settings.contrast ? 'checked' : ''}> ☀ Sunlight Mode (high contrast, easier to read outdoors)</label>
+      <div class="arow" style="margin-bottom:12px"><label class="chk small"><input type="checkbox" id="hapticOn" ${db.settings.haptics !== false ? 'checked' : ''}> Haptic Feedback (vibrate when moving to the next plot)</label><button type="button" class="small" id="hapticTest">Test</button></div>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="arrowbar" ${db.settings.arrowBar ? 'checked' : ''}> Show My Own ◀ ▲ ▼ ▶ Bar Above the Keyboard</label>
       <div class="actions">
         <button id="backup">Export Backup (.json)</button>
@@ -927,6 +930,8 @@ function viewHome() {
   app.querySelectorAll('[data-unarch]').forEach(b => b.onclick = () => { const t = getTrial(b.dataset.unarch); delete t.archived; t.updated = Date.now(); save(); toast('Trial moved back to your list'); viewHome(); });
   const drx = document.getElementById('dr-new-x'); if (drx) drx.onclick = () => { if (confirm('Discard this unfinished trial? Everything you entered will be lost.')) { dropDraft('trial:new'); viewHome(); } };
   document.getElementById('sig-btn').onclick = () => openSignaturePad(() => viewHome());
+  document.getElementById('hapticOn').onchange = e => { db.settings.haptics = e.target.checked; save(); if (e.target.checked) buzz(); };
+  document.getElementById('hapticTest').onclick = () => { const ok = buzz([40, 60, 40], true); toast(ok ? (db.settings.haptics === false ? 'Test sent – haptic feedback is switched off' : 'Test sent – did you feel it?') : 'This browser cannot vibrate. On iPhone it needs iOS 17.4 or later; also check the phone is not in silent / low-power mode.'); };
   document.getElementById('arrowbar').onchange = e => { db.settings.arrowBar = e.target.checked; save(); };
   document.getElementById('backup').onclick = () => { doBackup(); viewHome(); };
   const bk = document.getElementById('bk-now'); if (bk) bk.onclick = () => { doBackup(); viewHome(); };
@@ -1921,7 +1926,7 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
           `<option value="${j}" ${j === idx ? 'selected' : ''}>${plotTag(t, q.plot)} · Rep ${q.rep}${plotComplete(t, a, q.plot) ? ' ✓' : plotStarted(a, q.plot) ? ' …' : ''}</option>`).join('')}</select></label>
       <span style="display:flex;gap:14px;flex-wrap:wrap">
         ${locked ? '' : `<label class="chk small"><input type="checkbox" id="na" ${na ? 'checked' : ''}> Plot Not Assessed</label>`}
-        <label class="chk small"><input type="checkbox" id="hap" ${db.settings.haptics !== false ? 'checked' : ''}> Vibrate on Next Plot</label>
+        <label class="chk small"><input type="checkbox" id="hap" ${db.settings.haptics !== false ? 'checked' : ''}> Haptic Feedback</label>
         <label class="chk small"><input type="checkbox" id="sun" ${db.settings.contrast ? 'checked' : ''}> ☀ High Contrast</label>
         <label class="chk small"><input type="checkbox" id="serp" ${(a.serpentine !== undefined ? a.serpentine : t.serpentine) ? 'checked' : ''}> Serpentine</label>
         <label class="chk small"><input type="checkbox" id="showTrt" ${show ? 'checked' : ''}> Show Treatment</label>
