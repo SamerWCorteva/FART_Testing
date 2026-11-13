@@ -209,6 +209,8 @@ body.locked { overflow:hidden; }
 .plotbar .pb-sub { font-size:.72rem; color:var(--muted); line-height:1.3; margin-top:1px; }
 .plotbar .bar { height:4px; margin:4px -16px 0; border-radius:0; }
 .dotmark { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--accent); margin-left:4px; vertical-align:middle; }
+.ibtn { position:relative; }
+.ibtn .dotmark { position:absolute; right:5px; top:5px; margin:0; }
 .modal.cmt-ov { align-items:flex-start; padding:max(12px, env(safe-area-inset-top)) 12px 12px; }
 .sheet.cmt { border-radius:var(--radius); max-width:520px; border:1px solid var(--line); }
 .sheet.cmt textarea { min-height:130px; }
@@ -585,6 +587,7 @@ const kb = (() => {
 
 const ICON = {
   lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
+  comment: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z"/></svg>',
   unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
 };
@@ -1440,7 +1443,7 @@ function viewTrial(t) {
         <div class="vhead">
           <div><div class="vdate">${esc(dmy(a.date))}</div>
             <div class="small muted">${[a.assessor, a.cropBBCH ? `BBCH ${a.cropBBCH}${(a.cropBBCHMin || a.cropBBCHMax) ? ` (${a.cropBBCHMin || '–'}–${a.cropBBCHMax || '–'})` : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
-          <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center"><span class="pill ${status[1]}">${status[0]}</span>${canLock ? `<button class="ibtn" data-${a.locked ? 'unlock' : 'lock'}="${a.id}" title="${a.locked ? 'Locked – tap to unlock' : 'Lock this date'}" aria-label="${a.locked ? 'Unlock this date' : 'Lock this date'}" type="button">${a.locked ? ICON.lock : ICON.unlock}</button>` : ''}</span>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center"><span class="pill ${status[1]}">${status[0]}</span><button class="ibtn" data-cmt="${a.id}" type="button" title="Trial comment" aria-label="Trial comment for this date">${ICON.comment}${a.comment ? '<i class="dotmark"></i>' : ''}</button>${canLock ? `<button class="ibtn" data-${a.locked ? 'unlock' : 'lock'}="${a.id}" title="${a.locked ? 'Locked – tap to unlock' : 'Lock this date'}" aria-label="${a.locked ? 'Unlock this date' : 'Lock this date'}" type="button">${a.locked ? ICON.lock : ICON.unlock}</button>` : ''}</span>
         </div>
         ${(appLetters(t).length || unsaved) ? `<div class="pills" style="margin:0 0 .5rem">${appLetters(t).length ? `<span class="pill">${esc(scopeText(t, a))}</span>` : ''}${unsaved ? '<span class="pill warn">Unsaved Changes</span>' : ''}</div>` : ''}
         ${a.types.length ? `<div class="bar"><div style="width:${n ? done / n * 100 : 0}%"></div></div>
@@ -1452,7 +1455,6 @@ function viewTrial(t) {
           <a class="btn" href="#/trial/${t.id}/a/${a.id}/review">Review</a>
           <button data-xp="${a.id}">Export</button>
           <button data-sh="${a.id}">Share</button>
-          <button data-cmt="${a.id}" type="button">💬 Comment${a.comment ? '<i class="dotmark"></i>' : ''}</button>
           ${a.locked ? '' : `<a class="btn" href="#/trial/${t.id}/a/${a.id}/edit">Edit</a>`}
         </div>
         ${a.locked ? '' : `<div class="vfoot"><button class="ibtn danger" data-del="${a.id}" title="Delete this date" aria-label="Delete this date" type="button">${ICON.trash}</button></div>`}
@@ -1460,7 +1462,6 @@ function viewTrial(t) {
     }).join('') : `<div class="card empty"><p>No assessment dates yet.</p><a class="btn primary" href="#/trial/${t.id}/a/new">+ New Assessment Date</a></div>`}
 
     ${as.some(a => a.comment) ? `<section class="card"><h2>Trial Comments</h2><p class="small muted" style="margin-bottom:6px">By assessment date. These go at the end of the PDF and into Trial Info in the Excel export.</p>${commentCards(t, as)}</section>` : ''}
-    <section class="card" id="geo-card">${geoCardHtml(t)}</section>
     <section class="card">
       <h2>Field Layout</h2>
       <p class="small muted">Plot number and treatment for each plot.${t.untreated ? ' <span class="pill" style="background:var(--utc-bg);color:var(--ink)">Untreated = Darker</span>' : ''}</p>
@@ -1469,6 +1470,7 @@ function viewTrial(t) {
       </tbody></table></div>${isCustom(t) ? `<div class="replegend">${[...new Set(st.rows.flatMap(r => r.cells.filter(c => c.trt).map(c => c.rep)))].sort((x, y) => x - y).map(rp => `<span class="rl ${repClass(rp)}">Rep ${rp}</span>`).join('')}</div>` : ''}`).join('')}
       ${(t.trtNames.some(Boolean) || appLetters(t).length) ? `<p class="small" style="margin-top:12px">${range(t.trts).map(k => `<b>T${k}</b> ${esc(trtName(t, k) || '—')}${k === t.untreated ? ' (UTC)' : ''}${appLetters(t).length && k !== t.untreated ? ` <span class="muted">[${esc(trtApps(t, k).join(', ') || 'No Application')}]</span>` : ''}`).join(' · ')}</p>` : ''}
     </section>
+    <section class="card" id="geo-card">${geoCardHtml(t)}</section>
     <div class="card subtle" style="padding:12px;margin:16px 0 0">
       ${db.sections.length ? `<label class="field" style="margin:0;max-width:340px"><span>Home Page Section</span><select id="sec-sel">${secOpts(t.section)}</select></label>
         <p class="small muted" style="margin:.4rem 0 0">Only decides where this trial is listed on the home page. It doesn't change the trial or its data.</p>`
@@ -1890,7 +1892,7 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
 
   const inner = `
   <header class="top"><a class="back" href="#/trial/${t.id}">← ${esc(t.trialId)}</a><span class="spacer"></span>
-    <button class="small" id="cmt" type="button" aria-label="Trial comment for this date" title="Trial comment">💬${a.comment ? '<i class="dotmark"></i>' : ''}</button>
+    <button class="ibtn" id="cmt" type="button" title="Trial comment" aria-label="Trial comment for this date">${ICON.comment}${a.comment ? '<i class="dotmark"></i>' : ''}</button>
     <a class="btn small" href="${base}/review">Review</a><a class="brand sm" href="#/" aria-label="FART – back to the home page"><b>FART</b><span>Field Assessment Recording Tool</span></a></header>
   <div class="plotbar" id="plotbar">
     <div class="pb-row">
@@ -2003,7 +2005,7 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
   nextBtn.onclick = () => { if (fields.includes(document.activeElement) || document.activeElement === note) step('down'); else if (fields.length) fields[0].focus(); else nextPlot(undefined); };
   document.getElementById('prev').onclick = () => { if (fields.includes(document.activeElement)) step('up'); else if (document.activeElement === note) step('up'); else prevPlot(undefined); };
   document.getElementById('jump').onchange = e => { buzz(); goReplace(`${base}/plot/${e.target.value}`); };
-  document.getElementById('cmt').onclick = () => openComment(t, a, () => { const b = document.getElementById('cmt'); if (b) b.innerHTML = '💬' + (a.comment ? '<i class="dotmark"></i>' : ''); });
+  document.getElementById('cmt').onclick = () => openComment(t, a, () => { const b = document.getElementById('cmt'); if (b) b.innerHTML = ICON.comment + (a.comment ? '<i class="dotmark"></i>' : ''); });
   document.getElementById('hap').onchange = e => { db.settings.haptics = e.target.checked; save(); if (e.target.checked) buzz(); };
   const naBox = document.getElementById('na');
   if (naBox) naBox.onchange = e => {
@@ -2104,7 +2106,7 @@ function viewReview(t, a) {
       <a class="btn" href="${base}/plot/${firstIncomplete(t, a)}">← Back to Plots</a>
       <button id="xl" class="primary">Export…</button>
       <button id="shr">Share</button>
-      <button id="cmt" type="button">💬 Comment${a.comment ? '<i class="dotmark"></i>' : ''}</button>
+      <button class="ibtn" id="cmt" type="button" title="Trial comment" aria-label="Trial comment for this date">${ICON.comment}${a.comment ? '<i class="dotmark"></i>' : ''}</button>
       <button id="lock" class="ibtn" type="button" title="${a.locked ? 'Locked – tap to unlock' : 'Lock this date'}" aria-label="${a.locked ? 'Unlock this date' : 'Lock this date'}">${a.locked ? ICON.lock : ICON.unlock}</button>
     </div>
     ${a.locked ? '<section class="card warnbox"><b>🔒 Locked.</b> Values cannot be changed until you unlock this date. You will be asked for a reason.</section>' : ''}
