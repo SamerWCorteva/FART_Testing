@@ -221,7 +221,7 @@ body.locked { overflow:hidden; }
 /* walk the trial (GPS map) */
 .mapov { position:fixed; inset:0; z-index:60; background:var(--bg); display:flex; flex-direction:column; }
 .mapov > .top { flex:none; position:static; }
-.mapwrap { position:relative; flex:1; min-height:140px; background:#dfe7ef; overflow:hidden; touch-action:none; }
+.mapwrap { position:relative; flex:1; min-height:140px; background:#dfe7ef; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; cursor:grab; }
 .mapwrap svg { position:absolute; inset:0; width:100%; height:100%; display:block; }
 .mapbtns { position:absolute; right:8px; top:8px; display:flex; flex-direction:column; gap:6px; }
 .mapbtns button { min-height:38px; padding:.2rem .6rem; font-size:.85rem; background:rgba(255,255,255,.92); }
@@ -231,12 +231,17 @@ body.locked { overflow:hidden; }
 .cornrow { display:flex; align-items:center; gap:8px; padding:4px 0; border-top:1px solid var(--line); font-size:.85rem; }
 .cornrow:first-of-type { border-top:0; }
 .cornrow .cn { flex:none; width:24px; height:24px; border-radius:50%; background:var(--accent); color:var(--accent-ink); font-weight:700; display:flex; align-items:center; justify-content:center; font-size:.85rem; }
-.cornrow .cn.empty { background:var(--line); color:var(--muted); }
+.cornrow .cn.cn0 { background:var(--line); color:var(--muted); }
 .cornrow .cc { flex:1; min-width:0; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .cornrow button { min-height:30px; padding:.05rem .5rem; font-size:.78rem; }
 .mappanel .actions { margin:8px 0 0; gap:8px; }
 .mappanel .actions button { min-height:38px; }
 .minimap { width:100%; max-width:440px; height:auto; display:block; border:1px solid var(--line); border-radius:10px; background:#eef3f8; }
+.gpsready { border-radius:10px; padding:.5rem .7rem; font-weight:700; text-align:center; margin-bottom:8px; font-size:.95rem; line-height:1.3; }
+.gpsready.none { background:var(--line); color:var(--muted); }
+.gpsready.still, .gpsready.poor { background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn); }
+.gpsready.ready { background:var(--ok-soft); color:var(--ok); border:1px solid var(--ok); }
+.mapbtns button#mp-zin, .mapbtns button#mp-zout { font-size:1.25rem; font-weight:700; line-height:1; }
 main.entry .entry-field { margin-bottom:.6rem; }
 main.entry .entry-field input { min-height:50px; }
 /* review */
@@ -591,23 +596,6 @@ const ICON = {
   unlock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6"/></svg>',
 };
-/* ---------- haptics: a short tap when moving from plot to plot ---------- */
-const isApple = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-function buzzVibrate(pattern) { try { return typeof navigator.vibrate === 'function' && !!navigator.vibrate(pattern); } catch (e) { return false; } } // Android and most desktop browsers
-function buzzSwitch() { // iPhone / iPad (iOS 17.4+) have no vibrate(): flipping a hidden "switch" checkbox gives the system tap
-  try {
-    let l = document.getElementById('hapt');
-    if (!l) { l = document.createElement('label'); l.id = 'hapt'; l.setAttribute('aria-hidden', 'true'); l.style.display = 'none'; l.innerHTML = '<input type="checkbox" switch tabindex="-1">'; document.head.appendChild(l); }
-    l.click(); return true;
-  } catch (e) { return false; }
-}
-function buzz(pattern, force) { // returns true when a tap was sent; force = ignore the on/off setting (used by the Test button)
-  if (!force && db.settings.haptics === false) return false;
-  if (buzzVibrate(pattern || 35)) return true;
-  if (!buzzSwitch()) return false;
-  if (Array.isArray(pattern)) setTimeout(buzzSwitch, 110);
-  return true;
-}
 const dtTxt = ts => ts ? new Date(ts).toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
 
 /* ---------- trial comment (one per assessment date) ---------- */
@@ -897,8 +885,6 @@ function viewHome() {
       <h3>Backup &amp; Move Between Devices</h3>
       <p class="small muted">All data is saved in this browser on this device. Export a backup regularly, and use Restore to load it on another device.</p>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="contrast" ${db.settings.contrast ? 'checked' : ''}> ☀ Sunlight Mode (high contrast, easier to read outdoors)</label>
-      <div class="arow" style="margin-bottom:12px"><label class="chk small"><input type="checkbox" id="hapticOn" ${db.settings.haptics !== false ? 'checked' : ''}> Haptic Feedback (vibrate when moving to the next plot)</label><button type="button" class="small" id="hapticTest">Test</button></div>
-      <p class="small muted" id="hapticInfo" style="margin:-6px 0 12px"></p>
       <label class="chk small" style="margin-bottom:12px"><input type="checkbox" id="arrowbar" ${db.settings.arrowBar ? 'checked' : ''}> Show My Own ◀ ▲ ▼ ▶ Bar Above the Keyboard</label>
       <div class="actions">
         <button id="backup">Export Backup (.json)</button>
@@ -936,17 +922,6 @@ function viewHome() {
   app.querySelectorAll('[data-unarch]').forEach(b => b.onclick = () => { const t = getTrial(b.dataset.unarch); delete t.archived; t.updated = Date.now(); save(); toast('Trial moved back to your list'); viewHome(); });
   const drx = document.getElementById('dr-new-x'); if (drx) drx.onclick = () => { if (confirm('Discard this unfinished trial? Everything you entered will be lost.')) { dropDraft('trial:new'); viewHome(); } };
   document.getElementById('sig-btn').onclick = () => openSignaturePad(() => viewHome());
-  document.getElementById('hapticOn').onchange = e => { db.settings.haptics = e.target.checked; save(); if (e.target.checked) buzz(); };
-  document.getElementById('hapticTest').onclick = () => {
-    const out = document.getElementById('hapticInfo'), v = typeof navigator.vibrate === 'function';
-    const ua = (navigator.userAgent.match(/(iPhone OS|CPU OS|Android) [\d_.]+/) || [''])[0].replace(/_/g, '.');
-    const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone ? 'installed app' : 'browser tab';
-    let txt = `${ua || 'unknown OS'} · ${standalone} · vibrate(): ${v ? 'available' : 'not available'}${db.settings.haptics === false ? ' · NOTE: haptic feedback is switched off above' : ''}`;
-    out.textContent = txt + ' · Test 1 now…';
-    const r1 = v ? buzzVibrate([120]) : false;
-    setTimeout(() => { out.textContent = txt + ` · Test 1 (vibrate): ${v ? (r1 ? 'sent' : 'refused') : 'skipped'} · Test 2 now…`; buzzSwitch(); }, 1200);
-    setTimeout(() => { out.textContent = txt + ` · Test 1 (vibrate): ${v ? (r1 ? 'sent' : 'refused') : 'skipped'} · Test 2 (iPhone tap): sent. Which did you feel: 1, 2 or neither?`; }, 1700);
-  };
   document.getElementById('arrowbar').onchange = e => { db.settings.arrowBar = e.target.checked; save(); };
   document.getElementById('backup').onclick = () => { doBackup(); viewHome(); };
   const bk = document.getElementById('bk-now'); if (bk) bk.onclick = () => { doBackup(); viewHome(); };
@@ -1447,6 +1422,7 @@ function viewTrial(t) {
       <a class="btn primary" href="#/trial/${t.id}/a/new">+ New Assessment Date</a>
       <button id="xl" ${t.assessments.length ? '' : 'disabled'}>Export All…</button>
       <button id="share">Share Trial</button>
+      <button id="copy-trial">Copy Trial</button>
       <label class="btn">Import Assessment<input type="file" class="import-assess" accept=".json,application/json" hidden></label>
       <a class="btn" href="#/trial/${t.id}/edit">Edit Trial</a>
       <button id="arch">${t.archived ? 'Unarchive' : 'Archive Trial'}</button>
@@ -1500,6 +1476,7 @@ function viewTrial(t) {
   </main>`;
   document.getElementById('xl').onclick = () => openExport(t, null);
   document.getElementById('share').onclick = () => shareTrial(t);
+  document.getElementById('copy-trial').onclick = () => copyTrial(t);
   const x1 = document.getElementById('dr-trial-x'); if (x1) x1.onclick = () => { if (confirm('Discard your unsaved changes to this trial?')) { dropDraft('trial:' + t.id); viewTrial(t); } };
   const x2 = document.getElementById('dr-assess-x'); if (x2) x2.onclick = () => { if (confirm('Discard this unfinished assessment date?')) { dropDraft(`assess:${t.id}:new`); viewTrial(t); } };
   app.querySelectorAll('input.import-assess').forEach(inp => inp.onchange = async e => {
@@ -1941,7 +1918,6 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
           `<option value="${j}" ${j === idx ? 'selected' : ''}>${plotTag(t, q.plot)} · Rep ${q.rep}${plotComplete(t, a, q.plot) ? ' ✓' : plotStarted(a, q.plot) ? ' …' : ''}</option>`).join('')}</select></label>
       <span style="display:flex;gap:14px;flex-wrap:wrap">
         ${locked ? '' : `<label class="chk small"><input type="checkbox" id="na" ${na ? 'checked' : ''}> Plot Not Assessed</label>`}
-        <label class="chk small"><input type="checkbox" id="hap" ${db.settings.haptics !== false ? 'checked' : ''}> Haptic Feedback</label>
         <label class="chk small"><input type="checkbox" id="sun" ${db.settings.contrast ? 'checked' : ''}> ☀ High Contrast</label>
         <label class="chk small"><input type="checkbox" id="serp" ${(a.serpentine !== undefined ? a.serpentine : t.serpentine) ? 'checked' : ''}> Serpentine</label>
         <label class="chk small"><input type="checkbox" id="showTrt" ${show ? 'checked' : ''}> Show Treatment</label>
@@ -1984,14 +1960,13 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
   const kbOpen = () => fields.includes(document.activeElement) || document.activeElement === note;
   // Draw the next plot in place (no hash change event) and refocus, so the keyboard stays open.
   function goPlot(to, at) {
-    buzz();
     history.replaceState(null, '', `${base}/plot/${to}`);
     viewEntry(t, a, to, at, true);
   }
   function warnRange() { if (inputs.some(inp => outOfRange(a.types[inp.dataset.i], inp.value.trim()) === 'bad')) toast('A value is outside its expected range'); }
   function nextPlot(at) {
     warnRange();
-    if (idx === last) { buzz([40, 70, 40]); go(`${base}/review`); } else goPlot(idx + 1, at);
+    if (idx === last) go(`${base}/review`); else goPlot(idx + 1, at);
   }
   function prevPlot(at) { if (idx > 0) goPlot(idx - 1, at); }
   function step(dir) {
@@ -2024,9 +1999,8 @@ function viewEntry(t, a, idx, focusAt, keepScroll) {
   ['prev', 'next'].forEach(id => document.getElementById(id).addEventListener('mousedown', e => e.preventDefault()));
   nextBtn.onclick = () => { if (fields.includes(document.activeElement) || document.activeElement === note) step('down'); else if (fields.length) fields[0].focus(); else nextPlot(undefined); };
   document.getElementById('prev').onclick = () => { if (fields.includes(document.activeElement)) step('up'); else if (document.activeElement === note) step('up'); else prevPlot(undefined); };
-  document.getElementById('jump').onchange = e => { buzz(); goReplace(`${base}/plot/${e.target.value}`); };
+  document.getElementById('jump').onchange = e => goReplace(`${base}/plot/${e.target.value}`);
   document.getElementById('cmt').onclick = () => openComment(t, a, () => { const b = document.getElementById('cmt'); if (b) b.innerHTML = ICON.comment + (a.comment ? '<i class="dotmark"></i>' : ''); });
-  document.getElementById('hap').onchange = e => { db.settings.haptics = e.target.checked; save(); if (e.target.checked) buzz(); };
   const naBox = document.getElementById('na');
   if (naBox) naBox.onchange = e => {
     const r = rowFor();
@@ -2289,6 +2263,8 @@ function excelFile(t, only) {
   // assessment details, repeated at the top of the Plot Data and Field Layout sheets
   const detail = (() => {
     const rows = [[B('Trial'), t.trialId, B('Type'), t.type || null, B('Crop'), cp.name || null, B('Crop code'), cp.code || null, B('Reps × Trts'), `${t.reps} × ${t.trts}`, ...(hasApps ? [B('Applications'), appLetters(t).length] : [])]];
+    const gc = geoPts(t);
+    if (gc.length) rows.push([B('Trial corners (WGS84)'), ...gc.map(c => `${c.n}) ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), B('Accuracy'), `Phone GPS ${geoAccRange(gc)}, not survey grade`.replace('  ', ' ')]);
     as.forEach(a => {
       rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B('Crop GS (BBCH) majority'), a.cropBBCH || null, B('Min'), a.cropBBCHMin || null, B('Max'), a.cropBBCHMax || null, B('Notes'), a.notes || null]);
       const seenT = new Set();
@@ -2337,7 +2313,7 @@ function excelFile(t, only) {
     ...as.map(a => [dmy(a.date), a.assessor || null, a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null, a.types.map(typeLabel).join('; '), `${countDone(t, a)} / ${nPlots(t, a)}`, a.notes || null, ...(hasApps ? [scopeText(t, a)] : [])])];
   if (as.some(a => a.comment)) info.push([], [B('Trial comments (by assessment date)')], [B('Date'), B('Comment')], ...as.filter(a => a.comment).map(a => [dmy(a.date), a.comment]));
   if (as.some(a => (a.unlockLog || []).length)) info.push([], [B('Data changes after unlocking')], [B('Date'), B('Unlocked'), B('By'), B('Locked again'), B('Reason for change')], ...as.flatMap(a => (a.unlockLog || []).map(l => [dmy(a.date), dtTxt(l.ts), l.who || null, l.relocked ? dtTxt(l.relocked) : 'Not locked again', l.reason])));
-  if (geoPts(t).length) info.push([], [B('Trial corner coordinates (WGS84, decimal degrees)')], [B('Corner'), B('Latitude'), B('Longitude'), B('GPS accuracy (m)')], ...geoPts(t).map(c => [c.n, +fmtCoord(c.lat), +fmtCoord(c.lon), c.acc ? Math.round(c.acc) : null]));
+  if (geoPts(t).length) info.push([], [B('Trial corner coordinates (WGS84, decimal degrees)')], [B('Corner'), B('Latitude'), B('Longitude'), B('GPS accuracy (m)')], ...geoPts(t).map(c => [c.n, +fmtCoord(c.lat), +fmtCoord(c.lon), c.acc ? Math.round(c.acc) : null]), [B('Accuracy'), GEO_NOTE]);
 
   const blob = buildXlsx([
     { name: 'Plot Data', rows: wide, freeze: detail.length <= 5 ? detail.length + 2 : false },
@@ -2409,12 +2385,14 @@ function pdfFile(t, list) {
     return lines;
   };
   const repsTxt = `Reps: ${t.reps} · Treatments: ${t.trts}${appLetters(t).length ? ` · Applications: ${appLetters(t).length}` : ''}`;
-  const trialHdr = [{ s: `${t.trialId} – FART Field Assessment Recording Tool`, size: 11, bold: true }, { s: [t.type, cropTxt, repsTxt].filter(Boolean).join('  ·  '), size: 8 }];
+  const geoHdr = geoHeaderTxt(t) ? [{ s: geoHeaderTxt(t), size: 7 }] : []; // trial corner coordinates on every page header
+  const trialHdr = [{ s: `${t.trialId} – FART Field Assessment Recording Tool`, size: 11, bold: true }, { s: [t.type, cropTxt, repsTxt].filter(Boolean).join('  ·  '), size: 8 }, ...geoHdr];
   const assessDesc = ty => [typeLabel(ty), ty.untreatedOnly ? '[Untreated only]' : '', subsOf(ty) > 1 && !ty.noPhyto ? `Subsamples: ${subsOf(ty)}` : '', ty.noPhyto ? '[No phyto]' : '',
     needsStage(ty) ? (ty.stageMode === 'code' ? `Pest stage ${ty.stage || '–'}` : `${ty.kind === 'weed' ? 'Weed' : 'Pest'} GS ${rng(ty.stage || '–', ty.stageMin, ty.stageMax)}`) : '', ty.kind === 'weed' && (ty.sizeH || ty.sizeW) ? `Height ${ty.sizeH || '–'} × Width ${ty.sizeW || '–'} ${ty.sizeUnit || 'cm'}` : ''].filter(Boolean).join(' ');
   const buildHdr = a => [
     { s: `${t.trialId} – Assessment ${dmy(a.date)}`, size: 11, bold: true },
     { s: [t.type, cropTxt, repsTxt].filter(Boolean).join('  ·  '), size: 8 },
+    ...geoHdr,
     { s: `Assessor: ${a.assessor || '–'}    Crop growth stage (BBCH): ${rng(a.cropBBCH || '–', a.cropBBCHMin, a.cropBBCHMax)}${appLetters(t).length ? '    Applications assessed: ' + scopeText(t, a) : ''}${a.notes ? '    Notes: ' + a.notes : ''}`, size: 8 },
     ...wrapText('Assessments: ' + a.types.map(assessDesc).join('  •  '), W - 2 * M, 7, 4).map(s => ({ s, size: 7 })),
   ];
@@ -2510,6 +2488,22 @@ function pdfFile(t, list) {
 
 /* ---------- share a trial with another device ---------- */
 function stampOwn(t) { let n = 0; t.assessments.forEach(a => { if (!a.device) { stampAssessment(a); n++; } }); if (n) save(); } // dates made before signatures existed belong to this device, so mark them before they leave it
+function copyTrial(t) { // a new trial with the same setup (layout, randomization, treatments, applications); no dates, data, comments or GPS corners
+  let id = `${t.trialId}-COPY`;
+  for (;;) {
+    const v = prompt(`Copy the setup of ${t.trialId} into a new trial.\n\nThe plot layout, randomization, treatments and trial details are copied. Assessment dates, data, comments and GPS corners are not.\n\nNew Trial ID:`, id);
+    if (v === null) return;
+    id = v.trim().toUpperCase();
+    if (!id) { alert('Please enter a Trial ID for the new trial.'); continue; }
+    if (id === t.trialId.toUpperCase()) { alert(`The copy needs a different Trial ID from ${t.trialId}.`); id = `${t.trialId}-COPY`; continue; }
+    if (db.trials.some(x => x.trialId.toLowerCase() === id.toLowerCase()) && !confirm(`A trial called "${id}" already exists. Use this Trial ID anyway?`)) continue;
+    break;
+  }
+  const c = JSON.parse(JSON.stringify(t));
+  Object.assign(c, { id: uid(), trialId: id, assessments: [], created: Date.now(), updated: Date.now() });
+  delete c.geo; delete c.archived;
+  db.trials.push(c); save(); toast(`${id} created – a copy of ${t.trialId}`); go(`#/trial/${c.id}`);
+}
 function shareTrial(t) { // the whole trial (layout, assessments and values) as one small file
   stampOwn(t);
   const { section, archived, ...trial } = t;
@@ -2636,15 +2630,20 @@ function outlineSvg(v, cs, light) { // the trial outline with numbered corners
   P.forEach((q, i) => { s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="11" fill="${light ? '#0072CE' : '#fff'}" stroke="${light ? '#fff' : '#000'}" stroke-width="2"/><text x="${q[0].toFixed(1)}" y="${(q[1] + 4.5).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="${light ? '#fff' : '#000'}">${cs[i].n}</text>`; });
   return s;
 }
+const GEO_NOTE = "Coordinates are WGS84 decimal degrees taken from the phone's GPS. The ± value next to each corner is the GPS's own accuracy estimate at the moment it was recorded (roughly a 2-in-3 chance the true corner lies within that distance). Phone GPS is usually good to about 3–10 m in open ground, and worse near trees, buildings or in poor weather. Use these to find and map the trial, not as a land survey.";
+const geoAccRange = cs => { const a = cs.map(c => Math.round(c.acc || 0)).filter(Boolean); if (!a.length) return ''; const lo = Math.min(...a), hi = Math.max(...a); return lo === hi ? `±${lo} m` : `±${lo}–${hi} m`; };
+const geoHeaderTxt = t => { const cs = geoPts(t); if (!cs.length) return ''; const r = geoAccRange(cs); return `Trial corners (WGS84, phone GPS${r ? ' ' + r : ''}, not survey grade): ${cs.map(c => `${c.n}) ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}`).join('    ')}`; };
 function geoCardHtml(t) {
   const cs = geoPts(t), n = cs.length;
   const info = n === 4 ? `Sides: ${[[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => fmtM(distM(cs[i], cs[j]))).join(' · ')} · Area ≈ ${Math.round(areaM2(cs)).toLocaleString('en-GB')} m²` : '';
   return `<div class="arow"><h2 style="margin:0">Trial Location</h2><button id="geo-walk" type="button" class="primary small">${n ? 'Walk the Trial Again' : 'Walk the Trial'}</button></div>
-    ${n ? `<svg class="minimap" id="geo-mini" viewBox="0 0 320 200" style="margin-top:10px" role="img" aria-label="Outline of the trial"></svg>
+    ${n ? `<svg class="minimap" id="geo-mini" viewBox="0 0 320 200" style="margin-top:10px;cursor:zoom-in" role="button" tabindex="0" aria-label="Outline of the trial – tap to open the map full screen"></svg>
+      <p class="small muted" style="margin:4px 0 0">Tap the map to open it full screen, where you can pinch to zoom.</p>
       <div style="margin-top:8px">${cs.map(c => `<div class="cornrow"><span class="cn">${c.n}</span><span class="cc">${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)} m</span>` : ''}</span></div>`).join('')}</div>
       ${info ? `<p class="small muted" style="margin:6px 0 0">${esc(info)}</p>` : ''}
+      <p class="small muted" style="margin:6px 0 0"><b>Accuracy:</b> ${esc(GEO_NOTE)}</p>
       <div class="actions" style="margin:10px 0 0"><button id="geo-copy" type="button" class="small">Copy Coordinates</button><a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs[0].lat},${cs[0].lon}">Open Corner ${cs[0].n} in Maps</a><button id="geo-clear" type="button" class="small">Clear</button></div>`
-    : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and tap at each of its 4 corners. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. Needs location permission; the satellite background needs a connection, the rest works offline.</p>`}`;
+    : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and record each of its 4 corners. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. Needs location permission; the satellite background needs a connection, the rest works offline.</p>`}`;
 }
 function wireGeoCard(t, again) {
   const w = document.getElementById('geo-walk'); if (!w) return;
@@ -2654,93 +2653,184 @@ function wireGeoCard(t, again) {
     const st = db.settings.mapStyle || 'sat', sat = st !== 'none', v = fitView(cs, 320, 200, 0.7);
     mini.innerHTML = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + `<text x="8" y="16" font-size="12" font-weight="700" fill="${sat ? '#fff' : '#5a6877'}" style="${sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : ''}">N ↑</text>`
       + (st === 'sat' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">Imagery © Esri</text>' : st === 'map' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#222" style="paint-order:stroke;stroke:#fff;stroke-width:2px;">© OpenStreetMap</text>' : '');
+    mini.onclick = () => openTrialMap(t, again);
+    mini.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrialMap(t, again); } };
   }
   const cp = document.getElementById('geo-copy');
-  if (cp) cp.onclick = () => { const txt = `${t.trialId}\n${geoCopyText(t)}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); };
+  if (cp) cp.onclick = () => { const txt = `${t.trialId}\n${geoCopyText(t)}\n\n${GEO_NOTE}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); };
   const cl = document.getElementById('geo-clear');
   if (cl) cl.onclick = () => { if (!confirm('Clear the recorded corner coordinates of this trial?')) return; delete t.geo; t.updated = Date.now(); save(); again(); };
 }
+/* map tiles kept as live elements, so dragging and pinching move them instead of reloading them */
+function tilesUpdate(g, v, style) {
+  if (style === 'none') { g.innerHTML = ''; return; }
+  const z = clamp(Math.round(Math.log2(v.k / 256)), 0, 19), n = 2 ** z;
+  const xa = Math.floor((v.cx - v.W / 2 / v.k) * n), xb = Math.floor((v.cx + v.W / 2 / v.k) * n), ya = Math.max(0, Math.floor((v.cy - v.H / 2 / v.k) * n)), yb = Math.min(n - 1, Math.floor((v.cy + v.H / 2 / v.k) * n));
+  const wanted = new Set(), key = im => im.getAttribute('href') + '|' + im.dataset.tx;
+  const have = new Map([...g.children].map(im => [key(im), im]));
+  if ((xb - xa + 1) * (yb - ya + 1) <= 48) for (let ty = ya; ty <= yb; ty++) for (let tx = xa; tx <= xb; tx++) {
+    const wx = ((tx % n) + n) % n, url = style === 'map' ? `https://tile.openstreetmap.org/${z}/${wx}/${ty}.png` : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${wx}`, k = url + '|' + tx;
+    wanted.add(k);
+    if (!have.has(k)) {
+      const im = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+      im.setAttribute('preserveAspectRatio', 'none'); Object.assign(im.dataset, { z, tx, ty });
+      im.onload = im.onerror = () => { im.dataset.ok = '1'; prune(); };
+      im.setAttribute('href', url); g.appendChild(im); have.set(k, im);
+    }
+  }
+  g._wanted = wanted; g._z = z;
+  function prune() { // tiles from the old zoom level stay underneath until the new ones have loaded, so the map doesn't blink
+    const W = g._wanted, ready = [...g.children].filter(im => W.has(key(im))).every(im => im.dataset.ok);
+    [...g.children].forEach(im => { if (!W.has(key(im)) && (ready || +im.dataset.z === g._z || g.children.length > 160)) im.remove(); });
+  }
+  [...g.children].forEach(im => { const m = 2 ** im.dataset.z, sz = v.k / m;
+    im.setAttribute('x', (v.W / 2 + (im.dataset.tx / m - v.cx) * v.k).toFixed(1)); im.setAttribute('y', (v.H / 2 + (im.dataset.ty / m - v.cy) * v.k).toFixed(1));
+    im.setAttribute('width', (sz + .7).toFixed(1)); im.setAttribute('height', (sz + .7).toFixed(1)); });
+  prune();
+}
+/* one finger drags, two fingers pinch, double-tap or mouse wheel zooms. get() gives the view, set(v) shows a new one */
+function panZoom(el, get, set) {
+  const pts = new Map(); let last = null, lastTap = 0;
+  const rel = e => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const zoomAt = (v, mx, my, f) => { const k = clamp(v.k * f, 256 * 2 ** 4, 256 * 2 ** 22), wx = v.cx + (mx - v.W / 2) / v.k, wy = v.cy + (my - v.H / 2) / v.k; return { ...v, k, cx: wx - (mx - v.W / 2) / k, cy: wy - (my - v.H / 2) / k }; };
+  const now = () => { const a = [...pts.values()]; if (a.length < 2) return { m: a[0], d: 0 }; const [p, q] = a; return { m: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], d: Math.hypot(p[0] - q[0], p[1] - q[1]) }; };
+  el.addEventListener('pointerdown', e => {
+    if (e.target.closest && e.target.closest('button')) return;
+    const v = get(); if (!v) return;
+    try { el.setPointerCapture(e.pointerId); } catch (x) {}
+    pts.set(e.pointerId, rel(e)); last = now();
+    if (pts.size === 1) { const tm = Date.now(); if (tm - lastTap < 300) { set(zoomAt(v, ...rel(e), 2)); lastTap = 0; } else lastTap = tm; }
+  });
+  el.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, rel(e)); const s = now(), v = get(); if (!v || !last || !s.m) return;
+    let nv = { ...v, cx: v.cx - (s.m[0] - last.m[0]) / v.k, cy: v.cy - (s.m[1] - last.m[1]) / v.k };
+    if (pts.size >= 2 && last.d > 0 && s.d > 0) nv = zoomAt(nv, s.m[0], s.m[1], s.d / last.d);
+    last = s; set(nv);
+  });
+  const up = e => { pts.delete(e.pointerId); last = pts.size ? now() : null; };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+  el.addEventListener('wheel', e => { const v = get(); if (!v) return; e.preventDefault(); set(zoomAt(v, ...rel(e), Math.exp(-e.deltaY * 0.0015))); }, { passive: false });
+  return { zoomBy: f => { const v = get(); if (v) set(zoomAt(v, v.W / 2, v.H / 2, f)); } };
+}
+const GPS_READY_ACC = 10, GPS_HOLD_MS = 3000; // a corner is "OK to record" after 3 s standing still with ±10 m or better
 function openTrialMap(t, after) {
   const ov = document.createElement('div'); ov.className = 'mapov';
   ov.innerHTML = `<header class="top"><button type="button" class="small" id="mp-close">← Done</button><h1>Walk the Trial · ${esc(t.trialId)}</h1><span class="pill" id="mp-acc">GPS…</span></header>
     <div class="mapwrap" id="mp-wrap"><svg id="mp-svg" xmlns="http://www.w3.org/2000/svg"><g id="mp-tiles"></g><g id="mp-dyn"></g></svg><div class="mapmsg" id="mp-msg"></div>
-      <div class="mapbtns"><button type="button" id="mp-style"></button><button type="button" id="mp-fit">Re-centre</button></div></div>
+      <div class="mapbtns"><button type="button" id="mp-style"></button><button type="button" id="mp-fit">Re-centre</button><button type="button" id="mp-zin" aria-label="Zoom in">＋</button><button type="button" id="mp-zout" aria-label="Zoom out">−</button></div></div>
     <div class="mappanel" id="mp-panel"></div>`;
   document.body.appendChild(ov);
   const q = s => ov.querySelector(s), wrap = q('#mp-wrap'), svgT = q('#mp-tiles'), svgD = q('#mp-dyn'), msgEl = q('#mp-msg');
   const STYLES = { sat: 'Satellite', map: 'Street Map', none: 'Plain' };
-  let pos = null, trail = [], view = null, style = db.settings.mapStyle || 'sat', err = '', watchId = null, wake = null, closed = false, tileKey = '', hadFix = false;
+  let pos = null, trail = [], view = null, manual = false, style = db.settings.mapStyle || 'sat', err = '', watchId = null, wake = null, closed = false, hadFix = false;
+  let anchor = null, stableSince = 0, win = [], lastJump = 0; // standing-still check
   const corners = () => (t.geo && t.geo.corners) || [];
+  const nextCorner = () => { const cs = corners(); const i = cs.findIndex((c, k) => !c && k < 4); return i >= 0 ? i : cs.length < 4 ? cs.length : -1; };
 
   function draw() {
     const W = wrap.clientWidth, H = wrap.clientHeight; if (!W || !H) return;
     const cs = geoPts(t), near = pos && (!cs.length || distM(pos, cs[0]) < 3000), must = [...cs, ...(near ? [pos] : [])];
-    msgEl.textContent = must.length ? '' : (err || 'Waiting for a GPS position…');
-    if (!must.length) { svgT.innerHTML = ''; svgD.innerHTML = ''; view = null; return; }
-    const inside = view && view.W === W && view.H === H && must.every(p => { const [x, y] = scr(view, p); return x > W * .1 && x < W * .9 && y > H * .1 && y < H * .9; });
-    if (!inside) { view = fitView(must, W, H, 0.9); }
-    const key = [view.cx.toFixed(7), view.cy.toFixed(7), view.k.toFixed(1), style].join('|');
-    if (key !== tileKey) { tileKey = key; svgT.innerHTML = tilesSvg(view, style); }
+    msgEl.textContent = must.length || manual ? '' : (err || 'Waiting for a GPS position…');
+    if (!must.length && !view) { svgT.innerHTML = ''; svgD.innerHTML = ''; return; }
+    if (manual && view) { if (view.W !== W || view.H !== H) view = { ...view, W, H }; }
+    else if (must.length) {
+      const inside = view && view.W === W && view.H === H && must.every(p => { const [x, y] = scr(view, p); return x > W * .1 && x < W * .9 && y > H * .1 && y < H * .9; });
+      if (!inside) view = fitView(must, W, H, 0.9);
+    }
+    tilesUpdate(svgT, view, style);
     const sat = style !== 'none';
     let s = outlineSvg(view, cs, !sat);
     if (trail.length > 1) s = `<polyline points="${trail.map(p => scr(view, p).map(x => x.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${sat ? '#fff' : '#7a8a9a'}" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>` + s;
-    if (pos && near) {
-      const [px, py] = scr(view, pos), mpp = worldM(view.lat) / view.k, ar = Math.max(6, (pos.acc || 0) / mpp);
-      if (cs.length && cs.length < 4) { const [lx, ly] = scr(view, cs[cs.length - 1]); s += `<line x1="${lx.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="${sat ? '#ffd400' : '#0072CE'}" stroke-width="2" stroke-dasharray="6 5"/>`; }
+    if (pos) {
+      const [px, py] = scr(view, pos), mpp0 = worldM(view.lat) / view.k, ar = Math.max(6, (pos.acc || 0) / mpp0);
+      if (cs.length && cs.length < 4 && near) { const [lx, ly] = scr(view, cs[cs.length - 1]); s += `<line x1="${lx.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${px.toFixed(1)}" y2="${py.toFixed(1)}" stroke="${sat ? '#ffd400' : '#0072CE'}" stroke-width="2" stroke-dasharray="6 5"/>`; }
       s += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${ar.toFixed(1)}" fill="#1a73e8" fill-opacity=".16" stroke="#1a73e8" stroke-opacity=".5"/><circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="8" fill="#1a73e8" stroke="#fff" stroke-width="3"/>`;
     }
-    // scale bar (bottom left) and north arrow (top left)
     const mpp = worldM(view.lat) / view.k, target = 90 * mpp, pow = 10 ** Math.floor(Math.log10(target)), len = [1, 2, 5, 10].map(f => f * pow).filter(x => x <= target * 1.3).pop(), lw = len / mpp;
     const ink = sat ? '#fff' : '#223', sh = sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : '';
     s += `<g transform="translate(12 ${H - 16})"><path d="M0 -6V0H${lw.toFixed(0)}V-6" fill="none" stroke="${ink}" stroke-width="2.5"/><text x="0" y="-10" font-size="12" font-weight="700" fill="${ink}" style="${sh}">${fmtM(len)}</text></g>`;
     s += `<g transform="translate(24 30)"><path d="M0 -14L7 8L0 3L-7 8Z" fill="${ink}"/><text x="0" y="24" text-anchor="middle" font-size="12" font-weight="700" fill="${ink}" style="${sh}">N</text></g>`;
+    if (sat) s += `<text x="${W - 6}" y="${H - 6}" text-anchor="end" font-size="9" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">${style === 'sat' ? 'Imagery © Esri' : '© OpenStreetMap'}</text>`;
     svgD.innerHTML = s;
   }
+  let raf = 0; const drawSoon = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+  const pz = panZoom(wrap, () => view, v => { view = v; manual = true; drawSoon(); });
+
+  function readiness() { // is it OK to record a corner here?
+    if (!pos) return { s: 'none', txt: err || 'Waiting for a GPS position…' };
+    const tm = Date.now(), held = tm - stableSince;
+    if (tm - pos.t > 20000) return { s: 'poor', txt: 'GPS signal lost – waiting for it to come back…' };
+    if (tm - lastJump < 1500 && win.length < 2) return { s: 'still', txt: '🚶 Moving – stop at the corner and stay still' };
+    if (held < GPS_HOLD_MS) return { s: 'still', txt: `✋ Stay still – measuring… ${Math.max(1, Math.ceil((GPS_HOLD_MS - held) / 1000))} s` };
+    if (pos.acc > GPS_READY_ACC) return { s: 'poor', txt: `✋ Stay still – waiting for better accuracy (now ±${Math.round(pos.acc)} m, need ±${GPS_READY_ACC} m). Move away from trees or buildings if it doesn't improve.` };
+    return { s: 'ready', txt: `✓ OK to record – holding steady at ±${Math.round(pos.acc)} m` };
+  }
+  function showReady() {
+    const r = readiness(), el = q('#mp-ready'), b = q('#mp-mark');
+    if (el) { el.textContent = r.txt; el.className = 'gpsready ' + r.s; }
+    if (b) { b.classList.toggle('primary', r.s === 'ready'); b.disabled = !pos; }
+    return r;
+  }
   function panel() {
-    const cs = corners(), nextI = cs.findIndex((c, i) => !c && i < 4), have = geoPts(t);
+    const cs = corners(), nx = nextCorner(), have = geoPts(t);
     const sideTxt = have.length === 4 ? `<p class="small muted" style="margin:6px 0 0">Sides: ${[[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => fmtM(distM(have[i], have[j]))).join(' · ')} · Area ≈ ${Math.round(areaM2(have)).toLocaleString('en-GB')} m²</p>` : '';
-    const first = cs.length === 0 ? 0 : nextI < 0 && cs.length >= 4 ? -1 : (nextI < 0 ? cs.length : nextI);
-    q('#mp-panel').innerHTML = `${first >= 0 && first < 4 ? `<button type="button" class="primary mark" id="mp-mark" ${pos ? '' : 'disabled'}>Mark Corner ${first + 1} Here</button>` : `<div class="pill ok" style="display:block;text-align:center;padding:.5rem">All 4 corners marked</div>`}
-      <div class="actions">${have.length ? '<button type="button" class="small" id="mp-copy">Copy Coordinates</button>' : ''}${have.length ? '<button type="button" class="small" id="mp-clear">Clear All</button>' : ''}<button type="button" class="small primary" id="mp-save">Done</button></div>
-      <div style="margin-top:6px">${[0, 1, 2, 3].map(i => { const c = cs[i]; return `<div class="cornrow"><span class="cn ${c ? '' : 'empty'}">${i + 1}</span><span class="cc">${c ? `${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)}m</span>` : ''}` : '<span class="muted">Not marked yet</span>'}</span>${c ? `<button type="button" data-re="${i}" ${pos ? '' : 'disabled'}>Re-mark</button><button type="button" data-clr="${i}" aria-label="Clear corner ${i + 1}">✕</button>` : ''}</div>`; }).join('')}</div>
-      ${sideTxt}`;
+    q('#mp-panel').innerHTML = `<div class="gpsready none" id="mp-ready"></div>
+      ${nx >= 0 ? `<button type="button" class="mark" id="mp-mark" disabled>Record Corner ${nx + 1} Here</button>` : `<div class="pill ok" style="display:block;text-align:center;padding:.5rem">All 4 corners recorded</div>`}
+      <div class="actions">${have.length ? '<button type="button" class="small" id="mp-copy">Copy Coordinates</button><button type="button" class="small" id="mp-clear">Clear All</button>' : ''}<button type="button" class="small primary" id="mp-save">Done</button></div>
+      <div style="margin-top:6px">${[0, 1, 2, 3].map(i => { const c = cs[i]; return `<div class="cornrow"><span class="cn ${c ? '' : 'cn0'}">${i + 1}</span><span class="cc">${c ? `${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)}m</span>` : ''}` : '<span class="muted">Not recorded yet</span>'}</span>${c ? `<button type="button" data-re="${i}">Redo</button><button type="button" data-clr="${i}" aria-label="Clear corner ${i + 1}">✕</button>` : ''}</div>`; }).join('')}</div>
+      ${sideTxt}
+      <p class="small muted" style="margin:6px 0 0">Phone GPS (WGS84), not survey grade: the ± value is the GPS's own accuracy estimate. Each corner is the average of the readings taken while you stood still.</p>`;
+    showReady();
   }
   function setCorner(i) {
     if (!pos) { toast('Waiting for a GPS position…'); return; }
-    if (pos.acc > 20 && !confirm(`GPS accuracy is only ±${Math.round(pos.acc)} m right now. Mark this corner anyway?\n\n(Stand in the open and wait a few seconds for a better fix.)`)) return;
+    const r = readiness();
+    if (r.s !== 'ready' && !confirm(`Not ready yet:\n${r.txt}\n\nRecord corner ${i + 1} anyway?`)) return;
+    const pick = win.length ? win : [pos], wsum = pick.reduce((s, f) => s + 1 / Math.max(1, f.acc) ** 2, 0); // average of the readings since you stood still, the better ones counting more
+    const lat = pick.reduce((s, f) => s + f.lat / Math.max(1, f.acc) ** 2, 0) / wsum, lon = pick.reduce((s, f) => s + f.lon / Math.max(1, f.acc) ** 2, 0) / wsum;
     t.geo = t.geo || { corners: [null, null, null, null] }; while (t.geo.corners.length < 4) t.geo.corners.push(null);
-    t.geo.corners[i] = { lat: pos.lat, lon: pos.lon, acc: pos.acc, ts: Date.now() }; t.geo.ts = Date.now(); t.updated = Date.now(); save();
-    buzz([50, 60, 50]); view = null; panel(); draw();
+    t.geo.corners[i] = { lat, lon, acc: Math.min(...pick.map(f => f.acc)), ts: Date.now(), n: pick.length };
+    t.geo.ts = Date.now(); t.updated = Date.now(); save();
+    toast(`Corner ${i + 1} recorded`);
+    if (!manual) view = null; panel(); draw();
   }
   function status() {
     const a = q('#mp-acc');
-    if (err && !pos) { a.textContent = 'No GPS'; a.className = 'pill warn'; } else if (pos) { a.textContent = `±${Math.round(pos.acc)} m`; a.className = 'pill ' + (pos.acc <= 10 ? 'ok' : 'warn'); }
+    if (err && !pos) { a.textContent = 'No GPS'; a.className = 'pill warn'; } else if (pos) { a.textContent = `±${Math.round(pos.acc)} m`; a.className = 'pill ' + (pos.acc <= GPS_READY_ACC ? 'ok' : 'warn'); }
   }
   ov.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('button'); if (!b) return;
-    if (b.id === 'mp-mark') { const cs = corners(); const i = cs.findIndex((c, k) => !c && k < 4); setCorner(i < 0 ? cs.length : i); }
+    if (b.id === 'mp-mark') { const i = nextCorner(); if (i >= 0) setCorner(i); }
     else if (b.dataset.re !== undefined) setCorner(+b.dataset.re);
-    else if (b.dataset.clr !== undefined) { if (!confirm(`Clear corner ${+b.dataset.clr + 1}?`)) return; t.geo.corners[+b.dataset.clr] = null; if (!t.geo.corners.some(Boolean)) delete t.geo; t.updated = Date.now(); save(); view = null; panel(); draw(); }
-    else if (b.id === 'mp-clear') { if (!confirm('Clear all corner coordinates?')) return; delete t.geo; t.updated = Date.now(); save(); view = null; panel(); draw(); }
-    else if (b.id === 'mp-copy') { const txt = `${t.trialId}\n${geoCopyText(t)}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); }
+    else if (b.dataset.clr !== undefined) { if (!confirm(`Clear corner ${+b.dataset.clr + 1}?`)) return; t.geo.corners[+b.dataset.clr] = null; if (!t.geo.corners.some(Boolean)) delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
+    else if (b.id === 'mp-clear') { if (!confirm('Clear all corner coordinates?')) return; delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
+    else if (b.id === 'mp-copy') { const txt = `${t.trialId}\n${geoCopyText(t)}\n\n${GEO_NOTE}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); }
     else if (b.id === 'mp-save' || b.id === 'mp-close') close();
-    else if (b.id === 'mp-style') { const k = Object.keys(STYLES); style = k[(k.indexOf(style) + 1) % k.length]; db.settings.mapStyle = style; persistQuiet(); b.textContent = STYLES[style]; tileKey = ''; draw(); }
-    else if (b.id === 'mp-fit') { view = null; draw(); }
+    else if (b.id === 'mp-style') { const k = Object.keys(STYLES); style = k[(k.indexOf(style) + 1) % k.length]; db.settings.mapStyle = style; persistQuiet(); b.textContent = STYLES[style]; draw(); }
+    else if (b.id === 'mp-fit') { manual = false; view = null; draw(); }
+    else if (b.id === 'mp-zin') pz.zoomBy(2);
+    else if (b.id === 'mp-zout') pz.zoomBy(0.5);
   });
   q('#mp-style').textContent = STYLES[style] || STYLES.sat;
 
   function onPos(p) {
-    pos = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy || 0 }; err = '';
+    const f = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy || 99, t: Date.now() };
+    const tol = Math.max(2.5, f.acc * 0.6); // GPS wanders a little even when you stand still
+    if (!anchor || distM(anchor, f) > tol) { lastJump = anchor ? f.t : 0; anchor = f; stableSince = f.t; win = [f]; } // the very first reading is not a 'move'
+    else { win.push(f); if (win.length > 60) win.shift(); }
+    pos = f; err = '';
     if (!trail.length || distM(trail[trail.length - 1], pos) > 1.5) { trail.push({ lat: pos.lat, lon: pos.lon }); if (trail.length > 3000) trail.shift(); }
-    status(); if (!hadFix) { hadFix = true; panel(); } draw(); // the buttons are drawn once the first position arrives
+    status(); if (!hadFix) { hadFix = true; panel(); } else showReady(); draw();
   }
-  function onErr(e) { err = e.code === 1 ? 'Location is switched off for FART. Allow location access for this app in your browser or phone settings.' : e.code === 3 ? 'Still searching for a GPS signal… move to an open area.' : 'No position available.'; status(); draw(); }
+  function onErr(e) { err = e.code === 1 ? 'Location is switched off for FART. Allow location access for this app in your browser or phone settings.' : e.code === 3 ? 'Still searching for a GPS signal… move to an open area.' : 'No position available.'; status(); showReady(); draw(); }
   if (!navigator.geolocation) { err = 'This device cannot give a location.'; }
-  else watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 1000, timeout: 30000 });
+  else watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 });
+  const tick = setInterval(showReady, 500); // the countdown keeps running between GPS readings
   const getWake = () => { try { if (navigator.wakeLock && !closed) navigator.wakeLock.request('screen').then(l => { wake = l; }).catch(() => {}); } catch (e) {} }; getWake(); // keep the screen on while walking
   const onVis = () => { if (document.visibilityState === 'visible') getWake(); };
   document.addEventListener('visibilitychange', onVis);
-  const ro = window.ResizeObserver ? new ResizeObserver(() => { view = null; draw(); }) : null; if (ro) ro.observe(wrap);
+  const ro = window.ResizeObserver ? new ResizeObserver(() => { if (!manual) view = null; draw(); }) : null; if (ro) ro.observe(wrap);
   const onKey = e => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   history.pushState({ map: 1 }, '', location.href); // the phone's Back button closes the map instead of leaving the trial
@@ -2749,6 +2839,7 @@ function openTrialMap(t, after) {
   function close(fromPop) {
     if (closed) return; closed = true;
     if (watchId != null) navigator.geolocation.clearWatch(watchId);
+    clearInterval(tick);
     try { if (wake) wake.release(); } catch (e) {}
     if (ro) ro.disconnect();
     document.removeEventListener('visibilitychange', onVis); document.removeEventListener('keydown', onKey); window.removeEventListener('popstate', onPop);
