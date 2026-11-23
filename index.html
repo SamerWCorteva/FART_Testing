@@ -238,6 +238,7 @@ body.locked { overflow:hidden; }
 .mappanel .actions button { min-height:38px; }
 .locmap { position:relative; width:100%; margin:6px 0 10px; background:#dfe7ef; border:1px solid var(--line); border-radius:10px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
 .locmap svg, .locmap canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+.locmap svg.lnames { pointer-events:none; }
 #cs-chips .chip { min-height:40px; padding:.2rem .9rem; font-size:.95rem; }
 #cs-chips .chip.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .minimap { width:100%; max-width:440px; height:auto; display:block; border:1px solid var(--line); border-radius:10px; background:#eef3f8; }
@@ -417,6 +418,7 @@ function doBackup() {
   download(new Blob([json], { type: 'application/json' }), `field-assessments-backup_${dmy(today()).replace(/\//g, '-')}.json`);
   toast('Backup saved');
 }
+const plotSizeTxt = t => (t.plotL || t.plotW) ? `${t.plotL || '–'} m × ${t.plotW || '–'} m` : ''; // plot length × width
 const trialLine = t => `${t.reps} Reps × ${t.trts} Treatments${appLetters(t).length ? ` × ${appLetters(t).length} Application${appLetters(t).length === 1 ? '' : 's'}` : ''} · ${plotCount(t)} Plots`;
 const secOpts = sel => `<option value="">None (Other trials)</option>${db.sections.map(sc => `<option value="${sc.id}" ${sel === sc.id ? 'selected' : ''}>${esc(sc.name)}</option>`).join('')}`;
 const fmtDT = ts => { const x = new Date(ts), z = n => String(n).padStart(2, '0'); return `${z(x.getDate())}/${z(x.getMonth() + 1)}/${x.getFullYear()} ${z(x.getHours())}:${z(x.getMinutes())}`; };
@@ -1004,6 +1006,8 @@ function viewTrialForm(trial) {
             <option value="rep" ${d.numbering === 'rep' ? 'selected' : ''}>By rep: 101, 102… 201, 202…</option>
             <option value="seq" ${d.numbering === 'seq' ? 'selected' : ''}>Sequential: 1, 2, 3…</option>
           </select></label>
+        <label class="field"><span>Plot Size <span class="muted" style="font-weight:400">(length × width, metres)</span></span>
+          <span style="display:flex;gap:8px;align-items:center"><input id="f-plotl" inputmode="decimal" value="${esc(d.plotL || '')}" placeholder="Length" autocomplete="off" aria-label="Plot length in metres"><b>×</b><input id="f-plotw" inputmode="decimal" value="${esc(d.plotW || '')}" placeholder="Width" autocomplete="off" aria-label="Plot width in metres"></span></label>
         <label class="field"><span>Walking Order</span>
           <label class="chk" style="min-height:44px"><input type="checkbox" id="f-serp" ${d.serpentine ? 'checked' : ''}> Serpentine (reverse every other rep) – can also be switched while assessing</label></label>
       </div>
@@ -1347,7 +1351,7 @@ function viewTrialForm(trial) {
   };
   $('save').onclick = () => {
     d.trialId = $('f-id').value.trim().toUpperCase(); d.desc = $('f-desc').value.trim();
-    d.type = $('f-type').value;
+    d.type = $('f-type').value; d.plotL = $('f-plotl').value.trim().replace(',', '.'); d.plotW = $('f-plotw').value.trim().replace(',', '.');
     d.crop = $('f-crop').value === '__other' ? $('f-crop-other').value.trim() : $('f-crop').value;
     if (!d.trialId) { alert('Please enter a Trial ID.'); $('f-id').focus(); return; }
     if (db.trials.some(t => t.id !== d.id && t.trialId.toLowerCase() === d.trialId.toLowerCase()) && !confirm(`A trial called "${d.trialId}" already exists. Save anyway?`)) return;
@@ -1402,7 +1406,7 @@ function viewTrialForm(trial) {
   $('w-back').onclick = () => goStep(step - 1);
   /* drafts: the form is saved at every input or tap, with the step you were on */
   let finished = false;
-  const collect = () => { d.trialId = $('f-id').value.trim().toUpperCase(); d.desc = $('f-desc').value; d.type = $('f-type').value; d.crop = $('f-crop').value === '__other' ? $('f-crop-other').value.trim() : $('f-crop').value; };
+  const collect = () => { d.plotL = $('f-plotl').value.trim(); d.plotW = $('f-plotw').value.trim(); d.trialId = $('f-id').value.trim().toUpperCase(); d.desc = $('f-desc').value; d.type = $('f-type').value; d.crop = $('f-crop').value === '__other' ? $('f-crop-other').value.trim() : $('f-crop').value; };
   const snap = () => {
     if (finished || !$('f-id')) return null; // the form is already gone
     collect(); if (!editing && !d.trialId && !d.desc.trim()) return null; // nothing worth keeping yet
@@ -1428,7 +1432,7 @@ function viewTrial(t) {
   <main>
     ${t.desc ? `<p class="muted">${esc(t.desc)}</p>` : ''}
     ${(t.type || t.crop || t.archived) ? `<div class="pills" style="margin:0 0 .5rem">${t.archived ? '<span class="pill warn">Archived</span>' : ''}${t.type ? `<span class="pill">${esc(t.type)}</span>` : ''}${t.crop ? `<span class="pill">${esc(t.crop)}</span>` : ''}</div>` : ''}
-    <p class="small muted">${trialLine(t)} · ${t.serpentine ? 'Serpentine Walk' : 'Walk in Plot Order'}</p>
+    <p class="small muted">${trialLine(t)}${plotSizeTxt(t) ? ` · Plot Size ${plotSizeTxt(t)} (L × W)` : ''} · ${t.serpentine ? 'Serpentine Walk' : 'Walk in Plot Order'}</p>
     ${trDraft ? `<div class="card draftcard"><h3>Unsaved Changes to This Trial</h3><div class="small">Saved ${savedAgo(trDraft.saved)}</div>
       <div class="actions" style="margin:10px 0 0"><a class="btn primary small" href="#/trial/${t.id}/edit">Continue</a><button class="small" id="dr-trial-x" type="button">Discard</button></div></div>` : ''}
     ${newDraft ? `<div class="card draftcard"><h3>Unfinished Assessment Date</h3><div class="small">${esc(newDraft.data.dateTxt || dmy(newDraft.data.d.date))} · Saved ${savedAgo(newDraft.saved)}</div>
@@ -2363,7 +2367,7 @@ function excelFile(t, only) {
 
   // 4. Trial info
   const info = [[B('Trial ID'), t.trialId], [B('Description'), t.desc || null], [B('Untreated treatment'), t.untreated || null], [B('Trial type'), t.type || null], [B('Crop'), cp.name || null], [B('Crop code'), cp.code || null], [B('Reps'), t.reps], [B('Treatments'), t.trts],
-    [B('Plots'), plotCount(t)], ...(hasApps ? [[B('Applications'), appLetters(t).length]] : []), [B('Buffer plots'), bufferPlots(t).length || null], [B('Randomization'), isCustom(t) ? 'Custom randomization' : 'Regular RCB'], [B('Plot numbering'), isCustom(t) ? 'Custom' : t.numbering === 'seq' ? 'Sequential' : 'By rep (101, 201…)'],
+    [B('Plots'), plotCount(t)], ...(plotSizeTxt(t) ? [[B('Plot size (L × W)'), plotSizeTxt(t)]] : []), ...(hasApps ? [[B('Applications'), appLetters(t).length]] : []), [B('Buffer plots'), bufferPlots(t).length || null], [B('Randomization'), isCustom(t) ? 'Custom randomization' : 'Regular RCB'], [B('Plot numbering'), isCustom(t) ? 'Custom' : t.numbering === 'seq' ? 'Sequential' : 'By rep (101, 201…)'],
     [B('Exported'), new Date().toLocaleString('en-GB')], [B('NA'), 'Plot not assessed'], [], [B('Trt'), B('Treatment name'), ...(hasApps ? [B('Applications')] : [])], ...range(t.trts).map(k => [k, trtName(t, k) || null, ...(hasApps ? [trtApps(t, k).join(', ') || null] : [])]),
     [], [B('Date'), B('Assessor'), B('Crop BBCH (majority)'), B('BBCH min'), B('BBCH max'), B('Assessment types'), B('Plots complete'), B('Notes'), ...(hasApps ? [B('Applications assessed')] : [])],
     ...as.map(a => [dmy(a.date), a.assessor || null, ...(ms ? [stageText(t, a) || null, null, null] : [a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null]), a.types.map(typeLabel).join('; '), `${countDone(t, a)} / ${nPlots(t, a)}`, a.notes || null, ...(hasApps ? [scopeText(t, a)] : [])])];
@@ -2711,6 +2715,21 @@ const GEO_NOTE = "Phone GPS coordinates (WGS84). The ± value is the GPS's accur
 const geoAccRange = cs => { const a = cs.map(c => Math.round(c.acc || 0)).filter(Boolean); if (!a.length) return ''; const lo = Math.min(...a), hi = Math.max(...a); return lo === hi ? `±${lo} m` : `±${lo}–${hi} m`; };
 const geoHeaderTxt = t => { const cs = geoLabelled(t); if (!cs.length) return ''; const r = geoAccRange(cs); return `Trial corners (WGS84, phone GPS${r ? ' ' + r : ''}): ${cs.map(c => `${c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}`).join('    ')}`; };
 const parkSvg = (v, p) => { const [x, y] = scr(v, p); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="#e8590c" stroke="#fff" stroke-width="2.5"/><text x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">P</text>`; };
+const northSvg = (x, y, k) => `<g transform="translate(${x} ${y}) scale(${k})"><path d="M0 -13L8 9L0 4Z" fill="#1a1a1a" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/><path d="M0 -13L-8 9L0 4Z" fill="#fff" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/><text x="0" y="22" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" stroke="#1a1a1a" stroke-width="3" paint-order="stroke">N</text></g>`; // a north arrow: half dark, half white, so it shows on any background
+function trialMapSvg(t, W, H) { // the trial on a map: numbered corners, each with its LL / UL / UR / LR tag once all 4 are in, and the gate
+  const cs = geoPts(t), pk = geoParking(t), st = db.settings.mapStyle || 'sat', sat = st !== 'none';
+  const v = fitView([...cs, ...(pk ? [pk] : [])], W, H, 0.9);
+  let s = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + (pk ? parkSvg(v, pk) : '');
+  if (cs.length === 4) {
+    const P = cs.map(c => scr(v, c)), cx = P.reduce((a, q) => a + q[0], 0) / 4, cy = P.reduce((a, q) => a + q[1], 0) / 4;
+    P.forEach(([x, y], i) => { const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy) || 1, bx = clamp(x + dx / d * 27, 17, W - 17), by = clamp(y + dy / d * 22, 11, H - 11); // the tag sits just outside its corner
+      s += `<rect x="${(bx - 16).toFixed(1)}" y="${(by - 10).toFixed(1)}" width="32" height="20" rx="10" fill="#ffd400" stroke="#000" stroke-width="1.5"/><text x="${bx.toFixed(1)}" y="${(by + 4.5).toFixed(1)}" text-anchor="middle" font-size="12" font-weight="800" fill="#000">${cs[i].lab}</text>`; });
+  }
+  s += northSvg(18, 24, 1);
+  if (st === 'sat') s += `<text x="${W - 8}" y="${H - 5}" text-anchor="end" font-size="8" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">Imagery © Esri</text>`;
+  else if (st === 'map') s += `<text x="${W - 8}" y="${H - 5}" text-anchor="end" font-size="8" fill="#222" style="paint-order:stroke;stroke:#fff;stroke-width:2px;">© OpenStreetMap</text>`;
+  return s;
+}
 function cornerRowsHtml(t) { // corner numbers with their coordinates; with all 4 in, choose which one is LL / UL / UR / LR
   const cs = geoPts(t), pk = geoParking(t), pick = cs.length === 4, chosen = !!(t.geo && t.geo.labels);
   return (pick ? `<p class="small" style="margin:0 0 4px"><b>Which corner is which?</b> <span class="muted">${chosen ? 'LL Lower Left · UL Upper Left · UR Upper Right · LR Lower Right.' : 'Suggested from the map (north at the top) – check each one and change it if needed.'}</span></p>` : '')
@@ -2727,34 +2746,38 @@ function wireCornerPick(root, t, again) {
 function geoCardHtml(t) {
   const cs = geoPts(t), n = cs.length, pk = geoParking(t), first = cs[0] || pk;
   const info = n === 4 ? `Sides: ${[[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => fmtM(distM(cs[i], cs[j]))).join(' · ')} · Area ≈ ${Math.round(areaM2(cs)).toLocaleString('en-GB')} m²` : '';
-  return `<div class="arow"><h2 style="margin:0">Trial Location</h2><button id="geo-walk" type="button" class="primary small">${n ? 'Walk the Trial Again' : 'Walk the Trial'}</button></div>
+  const sum = [n ? `${n} corner${n === 1 ? '' : 's'}` : 'Not recorded yet', pk ? 'Parking / Gate' : ''].filter(Boolean).join(' · ');
+  return `<details class="sec" id="geo-sec" ${db.settings.geoOpen ? 'open' : ''}><summary><span class="sec-name">Trial Location</span><span class="small muted" style="font-weight:400">${sum}</span></summary>
+    <div class="actions" style="margin:10px 0 0"><button id="geo-walk" type="button" class="primary small">${n ? 'Walk the Trial Again' : 'Walk the Trial'}</button></div>
     ${first ? `<svg class="minimap" id="geo-mini" viewBox="0 0 320 200" style="margin-top:10px;cursor:zoom-in" role="button" tabindex="0" aria-label="Outline of the trial – tap to open the map full screen"></svg>
       <p class="small muted" style="margin:4px 0 0">Tap the map to open it full screen, where you can pinch to zoom.</p>
       <div style="margin-top:8px">${cornerRowsHtml(t)}</div>
       ${info ? `<p class="small muted" style="margin:6px 0 0">${esc(info)}</p>` : ''}
       <p class="small muted" style="margin:6px 0 0"><b>Accuracy:</b> ${esc(GEO_NOTE)}</p>
-      <div class="actions" style="margin:10px 0 0"><a class="btn primary small" href="#/trial/${t.id}/location">Location Sheet…</a><button id="geo-copy" type="button" class="small">Copy Coordinates</button><a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${first.lat},${first.lon}">Open in Maps</a><button id="geo-clear" type="button" class="small">Clear</button></div>`
+      <div class="actions" style="margin:10px 0 0"><a class="btn primary small" href="#/trial/${t.id}/location">Location Sheet…</a><button id="geo-copy" type="button" class="small">Copy Coordinates</button><button id="geo-nav" type="button" class="small">${pk ? 'Open Parking / Gate in Maps' : n === 4 ? 'Open LL Corner in Maps' : 'Open in Maps'}</button><button id="geo-clear" type="button" class="small">Clear</button></div>`
     : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and record each of its 4 corners, and the parking / gate. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. These fill in the Location Sheet. Needs location permission; the satellite background needs a connection, the rest works offline.</p>
-      <div class="actions" style="margin:10px 0 0"><a class="btn small" href="#/trial/${t.id}/location">Location Sheet…</a></div>`}`;
+      <div class="actions" style="margin:10px 0 0"><a class="btn small" href="#/trial/${t.id}/location">Location Sheet…</a></div>`}</details>`;
 }
 function wireGeoCard(t, again) {
   const card = document.getElementById('geo-card'); if (card) wireCornerPick(card, t, again);
+  const sec = document.getElementById('geo-sec'); if (sec) sec.addEventListener('toggle', () => { db.settings.geoOpen = sec.open; persistQuiet(); }); // remembers open / closed
   const w = document.getElementById('geo-walk'); if (!w) return;
   w.onclick = () => openTrialMap(t, again);
   const mini = document.getElementById('geo-mini'), cs = geoPts(t), pk = geoParking(t);
   if (mini && (cs.length || pk)) { // the same map as the walk screen (satellite / street when online, plain when offline)
-    const st = db.settings.mapStyle || 'sat', sat = st !== 'none', v = fitView([...cs, ...(pk ? [pk] : [])], 320, 200, 0.7);
-    mini.innerHTML = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + (pk ? parkSvg(v, pk) : '') + `<text x="8" y="16" font-size="12" font-weight="700" fill="${sat ? '#fff' : '#5a6877'}" style="${sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : ''}">N ↑</text>`
-      + (st === 'sat' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">Imagery © Esri</text>' : st === 'map' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#222" style="paint-order:stroke;stroke:#fff;stroke-width:2px;">© OpenStreetMap</text>' : '');
+    mini.innerHTML = trialMapSvg(t, 320, 200);
     mini.onclick = () => openTrialMap(t, again);
     mini.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrialMap(t, again); } };
   }
+  const nav = document.getElementById('geo-nav');
+  if (nav) nav.onclick = () => { const p = geoParking(t) || geoLL(t); if (p) location.href = `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lon}`; }; // the gate to drive to, else the LL corner; opened in place so no blank page is left
   const cp = document.getElementById('geo-copy');
   if (cp) cp.onclick = () => { const txt = `${t.trialId}\n${geoCopyText(t)}\n\n${GEO_NOTE}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); };
   const cl = document.getElementById('geo-clear');
   if (cl) cl.onclick = () => { if (!confirm('Clear the recorded corner coordinates of this trial?')) return; delete t.geo; t.updated = Date.now(); save(); again(); };
 }
 /* map tiles kept as live elements, so dragging and pinching move them instead of reloading them */
+const tileUrl = (style, z, x, y) => style === 'map' ? `https://tile.openstreetmap.org/${z}/${x}/${y}.png` : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 function tilesUpdate(g, v, style) {
   if (style === 'none') { g.innerHTML = ''; return; }
   const z = clamp(Math.round(Math.log2(v.k / 256)), 0, 19), n = 2 ** z;
@@ -2762,7 +2785,7 @@ function tilesUpdate(g, v, style) {
   const wanted = new Set(), key = im => im.getAttribute('href') + '|' + im.dataset.tx;
   const have = new Map([...g.children].map(im => [key(im), im]));
   if ((xb - xa + 1) * (yb - ya + 1) <= 48) for (let ty = ya; ty <= yb; ty++) for (let tx = xa; tx <= xb; tx++) {
-    const wx = ((tx % n) + n) % n, url = style === 'map' ? `https://tile.openstreetmap.org/${z}/${wx}/${ty}.png` : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${wx}`, k = url + '|' + tx;
+    const wx = ((tx % n) + n) % n, url = tileUrl(style, z, wx, ty), k = url + '|' + tx;
     wanted.add(k);
     if (!have.has(k)) {
       const im = document.createElementNS('http://www.w3.org/2000/svg', 'image');
@@ -2994,10 +3017,10 @@ function viewLocation(t) {
       <label class="field"><span>Protocol No <span class="muted" style="font-weight:400">(from the Trial Number – change it if needed)</span></span><input data-k="protocol" value="${esc(L.protocol || autoProtocol(t.trialId))}" autocomplete="off" autocapitalize="characters" style="text-transform:uppercase"></label>
       ${fld(LOC_TEXT[1], 'e.g. nearest town / farm')}${fld(LOC_TEXT[2])}
     </div></section>
-    ${cs.length ? `<section class="card"><h2>Corners</h2>${cornerRowsHtml(t)}</section>` : ''}
+    ${cs.length ? `<section class="card"><h2>Corners</h2><svg class="minimap" id="loc-cornmap" viewBox="0 0 320 220" style="margin:0 0 10px" role="img" aria-label="The trial with its numbered corners"></svg>${cornerRowsHtml(t)}</section>` : ''}
     ${cs.length || pk ? `<section class="card"><h2>Maps on the Sheet</h2>
       <p class="small muted" style="margin:0">Drag to move, pinch to zoom (or use − and ＋). The sheet uses exactly what you see here. The satellite picture needs internet.</p>
-      ${locMapHtml('ov', 'Overview')}${locMapHtml('cu', 'Close-up')}</section>` : ''}
+      ${locMapHtml('ov', 'Overview', t)}${locMapHtml('cu', 'Close-up', t)}</section>` : ''}
     <section class="card"><div class="arow"><h2 style="margin:0">Address</h2><button type="button" class="small" id="loc-look">Look Up from GPS</button></div>
       <p class="small muted" style="margin:6px 0 8px">Fills in the postcode, city, county and country from the ${pk ? 'parking / gate point' : 'trial location'} (UK only, needs internet). Check it and correct anything that is wrong.</p>
       <div class="grid2">${LOC_ADDR.map(f => fld(f)).join('')}</div></section>
@@ -3008,7 +3031,7 @@ function viewLocation(t) {
         <label class="field"><span>What3Words Trial</span><span style="display:flex;gap:6px"><input data-k="w3wTrial" value="${esc(L.w3wTrial || '')}" placeholder="word.word.word" autocomplete="off" autocapitalize="off"><button type="button" class="small" data-w3w="trial" ${cs.length ? '' : 'disabled'}>Find</button></span></label>
         <label class="field"><span>What3Words Parking</span><span style="display:flex;gap:6px"><input data-k="w3wParking" value="${esc(L.w3wParking || '')}" placeholder="word.word.word" autocomplete="off" autocapitalize="off"><button type="button" class="small" data-w3w="park" ${pk ? '' : 'disabled'}>Find</button></span></label>
       </div>
-      <p class="small muted" style="margin:0"><b>Find</b> copies the coordinates and opens what3words, so you can read off the three words. Go back to return here – what you typed is kept.</p></section>
+      <p class="small muted" style="margin:0"><b>Find</b> copies the coordinates of the LL corner (or the parking / gate) and opens what3words: paste them into its search bar to get that square's three words. Go back to return here – what you typed is kept.</p></section>
     <section class="card"><h2>Directions</h2>
       <textarea data-k="directions" rows="5" placeholder="e.g. Going up Birmingham Rd (A4141), turn into Manor Ln, then right into School Ln…">${esc(L.directions || '')}</textarea></section>
     <section class="card"><h2>Date &amp; Signature</h2>
@@ -3024,13 +3047,16 @@ function viewLocation(t) {
     t.loc = t.loc || {}; if (v.trim()) t.loc[inp.dataset.k] = v.trim(); else delete t.loc[inp.dataset.k];
     t.updated = Date.now(); save();
   });
-  app.querySelectorAll('[data-w3w]').forEach(b => b.onclick = () => {
-    const p = b.dataset.w3w === 'park' ? pk : ll; if (!p) return;
-    const ll6 = `${fmtCoord(p.lat)},${fmtCoord(p.lon)}`;
-    try { navigator.clipboard && navigator.clipboard.writeText(ll6); } catch (e) {}
-    flushDraft(); location.href = `https://what3words.com/${ll6}`; // opened in place, so no blank page is left behind; Back (or Done) returns here – everything typed is already saved
+  app.querySelectorAll('[data-w3w]').forEach(b => b.onclick = async () => {
+    const park = b.dataset.w3w === 'park', p = park ? pk : ll; if (!p) return;
+    const ll6 = `${fmtCoord(p.lat)}, ${fmtCoord(p.lon)}`, what = park ? 'Parking / Gate' : (p.lab === 'LL' ? 'LL corner' : `corner ${p.n}`);
+    let copied = false; try { if (navigator.clipboard) { await navigator.clipboard.writeText(ll6); copied = true; } } catch (e) {}
+    // what3words has no web link that opens at given coordinates (it shows where you are), so the point is pasted into its search bar
+    if (!confirm(`${what}: ${ll6}\n\n${copied ? 'These coordinates are copied.' : 'Note these coordinates.'} In what3words, tap the search bar, ${copied ? 'paste them' : 'type them in'} and choose the square – its three words are the address for the ${what}.\n\nOpen what3words now?`)) return;
+    flushDraft(); location.href = 'https://what3words.com/'; // opened in place, so no blank page is left behind; Back returns here – everything typed is already saved
   });
   wireCornerPick(app, t, () => viewLocation(t));
+  const cm = document.getElementById('loc-cornmap'); if (cm) cm.innerHTML = trialMapSvg(t, 320, 220);
   wireLocMap(t, 'ov'); wireLocMap(t, 'cu');
   document.getElementById('loc-sig').onclick = () => openSignaturePad(() => viewLocation(t));
   const dIn = app.querySelector('[data-k="date"]');
@@ -3063,20 +3089,26 @@ function viewLocation(t) {
 }
 /* satellite map drawn onto a canvas (so it can go into the PDF) */
 const loadImg = (url, ms) => new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; const tm = setTimeout(() => res(null), ms || 12000); im.onload = () => { clearTimeout(tm); res(im); }; im.onerror = () => { clearTimeout(tm); res(null); }; im.src = url; });
-async function mapJpeg(v, W, H, overlay) {
+async function mapJpeg(v, W, H, overlay, names) { // names = credit OpenStreetMap too (its roads are drawn by the overlay)
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
   ctx.fillStyle = '#dfe7ef'; ctx.fillRect(0, 0, W, H);
-  let z = clamp(Math.ceil(Math.log2(v.k / 256)), 0, 19), n, xa, xb, ya, yb;
-  for (;;) { n = 2 ** z; xa = Math.floor((v.cx - W / 2 / v.k) * n); xb = Math.floor((v.cx + W / 2 / v.k) * n); ya = Math.max(0, Math.floor((v.cy - H / 2 / v.k) * n)); yb = Math.min(n - 1, Math.floor((v.cy + H / 2 / v.k) * n)); if ((xb - xa + 1) * (yb - ya + 1) <= 90 || z === 0) break; z--; }
-  const sz = v.k / n, jobs = [];
-  for (let ty = ya; ty <= yb; ty++) for (let tx = xa; tx <= xb; tx++) {
-    const wx = ((tx % n) + n) % n, x = W / 2 + (tx / n - v.cx) * v.k, y = H / 2 + (ty / n - v.cy) * v.k;
-    jobs.push(loadImg(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${wx}`).then(im => { if (im) { ctx.drawImage(im, x, y, sz + 0.6, sz + 0.6); return 1; } return 0; }));
-  }
-  const ok = (await Promise.all(jobs)).reduce((a, b) => a + b, 0);
+  const layer = async (style, z0) => {
+    let z = z0, n, xa, xb, ya, yb;
+    for (;;) { n = 2 ** z; xa = Math.floor((v.cx - W / 2 / v.k) * n); xb = Math.floor((v.cx + W / 2 / v.k) * n); ya = Math.max(0, Math.floor((v.cy - H / 2 / v.k) * n)); yb = Math.min(n - 1, Math.floor((v.cy + H / 2 / v.k) * n)); if ((xb - xa + 1) * (yb - ya + 1) <= 90 || z === 0) break; z--; }
+    const sz = v.k / n, jobs = [];
+    for (let ty = ya; ty <= yb; ty++) for (let tx = xa; tx <= xb; tx++) {
+      const x = W / 2 + (tx / n - v.cx) * v.k, y = H / 2 + (ty / n - v.cy) * v.k;
+      jobs.push(loadImg(tileUrl(style, z, ((tx % n) + n) % n, ty)).then(im => ({ im, x, y })));
+    }
+    const got = await Promise.all(jobs); // drawn once all have arrived, so this layer sits wholly on top of the one before
+    got.forEach(({ im, x, y }) => { if (im) ctx.drawImage(im, x, y, sz + 0.6, sz + 0.6); });
+    return got.filter(g => g.im).length;
+  };
+  const ok = await layer('sat', clamp(Math.ceil(Math.log2(v.k / 256)), 0, 19));
   overlay(ctx);
+  const credit = names ? 'Imagery © Esri · Roads & names © OpenStreetMap contributors' : 'Imagery © Esri';
   ctx.font = `${Math.round(H / 40)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.fillStyle = '#fff';
-  if (ok) { ctx.strokeText('Imagery © Esri', W - 8, H - 8); ctx.fillText('Imagery © Esri', W - 8, H - 8); }
+  if (ok || names) { ctx.strokeText(credit, W - 8, H - 8); ctx.fillText(credit, W - 8, H - 8); }
   let data; try { data = cv.toDataURL('image/jpeg', 0.85); } catch (e) { data = null; }
   return { data, ok: ok > 0, w: W, h: H };
 }
@@ -3103,6 +3135,9 @@ function canvasCallout(ctx, label, color, tail, tip, sc, tipGap) { // a label ta
   ctx.shadowColor = 'transparent'; ctx.lineWidth = 2.5 * sc; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, px + pw / 2, py + ph / 2 + 1);
   ctx.restore();
+  const keep = [{ x0: px - 6, y0: py - 6, x1: px + pw + 6, y1: py + ph + 6 }]; // the tag and its arrow, kept clear of map names
+  for (let k = 0; k <= 12; k++) { const u = k / 12, x = (1 - u) ** 2 * start.x + 2 * (1 - u) * u * cp.x + u * u * t2.x, y = (1 - u) ** 2 * start.y + 2 * (1 - u) * u * cp.y + u * u * t2.y, r = 12 * sc; keep.push({ x0: x - r, x1: x + r, y0: y - r, y1: y + r }); }
+  return keep;
 }
 function canvasOutline(ctx, P, labs, scale) {
   if (P.length >= 2) { ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); if (P.length >= 3) ctx.closePath();
@@ -3110,10 +3145,18 @@ function canvasOutline(ctx, P, labs, scale) {
   if (labs) P.forEach(([x, y], i) => { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 * scale; ctx.strokeStyle = '#000'; ctx.stroke();
     ctx.fillStyle = '#000'; ctx.font = `bold ${Math.round(12 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(labs[i], x, y + 0.5); ctx.textBaseline = 'alphabetic'; });
 }
+function canvasNorth(ctx, x, y, k) { // same arrow as on the screen maps
+  ctx.save(); ctx.translate(x, y); ctx.scale(k, k); ctx.lineJoin = 'round'; ctx.lineWidth = 1.6;
+  ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 4;
+  ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(8, 9); ctx.lineTo(0, 4); ctx.closePath(); ctx.fillStyle = '#1a1a1a'; ctx.fill(); ctx.shadowColor = 'transparent'; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(-8, 9); ctx.lineTo(0, 4); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#1a1a1a'; ctx.stroke();
+  ctx.font = 'bold 12px Helvetica, Arial, sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = '#1a1a1a'; ctx.strokeText('N', 0, 23); ctx.fillStyle = '#fff'; ctx.fillText('N', 0, 23);
+  ctx.restore();
+}
 function canvasP(ctx, x, y, scale) { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#e8590c'; ctx.fill(); ctx.lineWidth = 3 * scale; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(16 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('P', x, y + 1); ctx.textBaseline = 'alphabetic'; }
 /* the two maps on the sheet: the same pixels in the preview (where they can be dragged and zoomed) and in the PDF */
-const LOC_MAP = { ov: { W: 567, H: 432 }, cu: { W: 1063, H: 484 } }; // twice the size they are printed at
+const LOC_MAP = { ov: { W: 567, H: 388 }, cu: { W: 1063, H: 400 } }; // twice the size they are printed at
 const invMercY = y => Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI;
 const viewToStore = v => { const lat = invMercY(v.cy); return { lat, lon: v.cx * 360 - 180, m: v.W / v.k * worldM(lat) }; }; // centre + metres across, so it doesn't depend on screen size
 const viewFromStore = (st, W, H) => ({ cx: mercX(st.lon), cy: mercY(st.lat), k: W / (st.m / worldM(st.lat)), W, H, lat: st.lat });
@@ -3128,50 +3171,160 @@ function locDefaultView(t, which) { // overview: about 2.2 km across; close-up: 
 }
 function locView(t, which) { const st = t.loc && t.loc[which + 'View'], { W, H } = LOC_MAP[which]; return st && st.m ? viewFromStore(st, W, H) : locDefaultView(t, which); }
 function drawLocOverlay(ctx, t, which, v) {
-  const { cs, pk, cen } = locGeo(t), W = v.W, H = v.H;
+  const { cs, pk, cen } = locGeo(t), W = v.W, H = v.H, nk = which === 'ov' ? 1.6 : 2; // north arrow, bottom left
+  canvasNorth(ctx, 18 * nk, H - 32 * nk, nk);
+  const north = { x0: 0, x1: 36 * nk, y0: H - 50 * nk, y1: H };
   if (which === 'ov') { // outline (tiny at this scale) with a red pin, and the gate
     canvasOutline(ctx, cs.map(c => scr(v, c)), null, 1);
-    if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1); }
-    if (!cen) return;
+    const keep = [north]; if (cs.length) keep.push(ptsBox(cs.map(c => scr(v, c)), 10));
+    if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1); keep.push({ x0: x - 18, x1: x + 18, y0: y - 18, y1: y + 18 }); }
+    if (!cen) return keep;
     const [x, y] = scr(v, cen); ctx.beginPath(); ctx.arc(x, y - 22, 12, Math.PI * 0.85, Math.PI * 0.15); ctx.lineTo(x, y); ctx.closePath(); ctx.fillStyle = '#d93025'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
     ctx.beginPath(); ctx.arc(x, y - 22, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
-    return;
+    keep.push({ x0: x - 16, x1: x + 16, y0: y - 38, y1: y + 2 });
+    return keep;
   }
   // close-up: outline, corner names, gate, and tags with arrows to them
   canvasOutline(ctx, cs.map(c => scr(v, c)), cs.map(c => c.lab), 1.4);
-  if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1.4); }
+  const keep = [north]; if (cs.length) keep.push(ptsBox(cs.map(c => scr(v, c)), 24));
+  if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1.4); keep.push({ x0: x - 24, x1: x + 24, y0: y - 24, y1: y + 24 }); }
   // the trial tag goes on the side away from the gate, so the two never cross; each sits above its target, or below it when the target is near the top
   const c0 = cen ? scr(v, cen) : null, p0 = pk ? scr(v, pk) : null, trialLeft = !p0 || !c0 || p0[0] >= c0[0], sc = 1.6;
   const tail = (x, y, left) => ({ x: left ? W * 0.2 : W * 0.8, y: y < H * 0.42 ? H - 34 : 34 });
-  if (cs.length) canvasCallout(ctx, t.trialId, '#0072CE', tail(c0[0], c0[1], trialLeft), { x: c0[0], y: c0[1] }, sc, 0);
-  if (p0) canvasCallout(ctx, 'Parking / Gate', '#e8590c', tail(p0[0], p0[1], !trialLeft), { x: p0[0], y: p0[1] }, sc, 24);
+  if (cs.length) keep.push(...canvasCallout(ctx, t.trialId, '#0072CE', tail(c0[0], c0[1], trialLeft), { x: c0[0], y: c0[1] }, sc, 0));
+  if (p0) keep.push(...canvasCallout(ctx, 'Parking / Gate', '#e8590c', tail(p0[0], p0[1], !trialLeft), { x: p0[0], y: p0[1] }, sc, 24));
+  return keep;
 }
-function locMapHtml(which, title) {
+const ptsBox = (P, pad) => ({ x0: Math.min(...P.map(q => q[0])) - pad, x1: Math.max(...P.map(q => q[0])) + pad, y0: Math.min(...P.map(q => q[1])) - pad, y1: Math.max(...P.map(q => q[1])) + pad });
+const locNames = (t, which) => { const v = t.loc && t.loc[which + 'Names']; return v === undefined ? which === 'ov' : !!v; }; // overview: on unless switched off; close-up: off unless switched on
+function locMapHtml(which, title, t) {
   const { W, H } = LOC_MAP[which];
-  return `<div class="arow" style="margin-top:8px"><b>${title}</b><span style="display:flex;gap:6px"><button type="button" class="small" data-mz="${which}" data-f="0.5" aria-label="Zoom out">−</button><button type="button" class="small" data-mz="${which}" data-f="2" aria-label="Zoom in">＋</button><button type="button" class="small" data-mreset="${which}">Reset</button></span></div>
-    <div class="locmap" id="lm-${which}" style="aspect-ratio:${W} / ${H};${which === 'ov' ? 'max-width:420px' : ''}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><g></g></svg><canvas width="${W}" height="${H}"></canvas></div>`;
+  return `<div class="arow" style="margin-top:8px"><b>${title}</b><label class="chk small" style="margin:0 auto 0 4px"><input type="checkbox" data-mnames="${which}" ${locNames(t, which) ? 'checked' : ''}> Road &amp; place names</label><span style="display:flex;gap:6px"><button type="button" class="small" data-mz="${which}" data-f="0.5" aria-label="Zoom out">−</button><button type="button" class="small" data-mz="${which}" data-f="2" aria-label="Zoom in">＋</button><button type="button" class="small" data-mreset="${which}">Reset</button></span></div>
+    <div class="locmap" id="lm-${which}" style="aspect-ratio:${W} / ${H};${which === 'ov' ? 'max-width:420px' : ''}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><g class="lb"></g></svg><canvas width="${W}" height="${H}"></canvas><svg class="lnames" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg></div>
+    <p class="small muted" id="lm-${which}-note" style="margin:-4px 0 6px"></p>`;
 }
 function wireLocMap(t, which) {
   const el = document.getElementById('lm-' + which); if (!el) return;
-  const g = el.querySelector('g'), cv = el.querySelector('canvas'), ctx = cv.getContext('2d');
+  const g = el.querySelector('g.lb'), nm = el.querySelector('svg.lnames'), note = document.getElementById(`lm-${which}-note`), cv = el.querySelector('canvas'), ctx = cv.getContext('2d');
+  let asked = 0;
   let v = locView(t, which), timer = 0, raf = 0;
   if (!v) return;
-  const draw = () => { tilesUpdate(g, v, 'sat'); ctx.clearRect(0, 0, cv.width, cv.height); drawLocOverlay(ctx, t, which, v); };
+  const draw = () => {
+    tilesUpdate(g, v, 'sat');
+    const on = locNames(t, which), data = on ? osmHave(v) : null;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    if (data) drawRoads(ctx, data, v);
+    const keepClear = drawLocOverlay(ctx, t, which, v);
+    nm.innerHTML = data ? labelsSvg(placeLabels(data, v, keepClear)) : '';
+    if (!on) { note.textContent = ''; return; }
+    if (data) { note.textContent = 'Roads & names: © OpenStreetMap contributors'; return; }
+    note.textContent = 'Loading road & place names…';
+    const me = ++asked; clearTimeout(draw.t);
+    draw.t = setTimeout(() => osmGet(v).then(() => { if (me === asked) draw(); }).catch(() => { if (me === asked) note.textContent = "Road & place names couldn't be loaded (no internet?). They are added when you export with a connection."; }), 500);
+  };
+  const nb = app.querySelector(`[data-mnames="${which}"]`);
+  if (nb) nb.onchange = () => { t.loc = t.loc || {}; t.loc[which + 'Names'] = nb.checked; t.updated = Date.now(); save(); draw(); };
   const keep = () => { clearTimeout(timer); timer = setTimeout(() => { t.loc = t.loc || {}; t.loc[which + 'View'] = viewToStore(v); t.updated = Date.now(); save(); }, 300); };
   const pz = panZoom(el, () => v, nv => { v = nv; if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); keep(); }, () => v.W / (el.clientWidth || v.W));
   app.querySelectorAll(`[data-mz="${which}"]`).forEach(b => b.onclick = () => pz.zoomBy(+b.dataset.f));
   app.querySelectorAll(`[data-mreset="${which}"]`).forEach(b => b.onclick = () => { clearTimeout(timer); if (t.loc) delete t.loc[which + 'View']; t.updated = Date.now(); save(); v = locDefaultView(t, which); draw(); });
   draw();
 }
+/* ---------- road and place names from OpenStreetMap, drawn as real text (sharp on screen and in the PDF) ---------- */
+const OSM_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+const osmStore = []; // { bb, data } already fetched this session; a view inside one of them needs no new request
+const osmPending = {};
+const viewBounds = v => ({ w: (v.cx - v.W / 2 / v.k) * 360 - 180, e: (v.cx + v.W / 2 / v.k) * 360 - 180, n: invMercY(v.cy - v.H / 2 / v.k), s: invMercY(v.cy + v.H / 2 / v.k) });
+const osmHave = v => { const b = viewBounds(v); const hit = osmStore.find(o => o.bb.s <= b.s && o.bb.n >= b.n && o.bb.w <= b.w && o.bb.e >= b.e && o.minor === (osmSpanM(v) < 6000)); return hit ? hit.data : null; };
+const osmSpanM = v => v.W / v.k * worldM(v.lat);
+function osmGet(v) { // resolves with the roads and places around this view (fetched once, with some room to pan)
+  const got = osmHave(v); if (got) return Promise.resolve(got);
+  const b = viewBounds(v), dx = (b.e - b.w) * 0.5, dy = (b.n - b.s) * 0.5, g = 0.01, minor = osmSpanM(v) < 6000;
+  const bb = { s: Math.floor((b.s - dy) / g) * g, w: Math.floor((b.w - dx) / g) * g, n: Math.ceil((b.n + dy) / g) * g, e: Math.ceil((b.e + dx) / g) * g };
+  const key = [bb.s, bb.w, bb.n, bb.e, minor].map(String).join(',');
+  if (osmPending[key]) return osmPending[key];
+  const box = `(${bb.s.toFixed(4)},${bb.w.toFixed(4)},${bb.n.toFixed(4)},${bb.e.toFixed(4)})`;
+  const hw = minor ? 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|track' : 'motorway|trunk|primary|secondary|tertiary|unclassified';
+  const q = `[out:json][timeout:25];(node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|locality|farm|isolated_dwelling)$"]["name"]${box};way["highway"~"^(${hw})(_link)?$"]${box};);out geom qt;`;
+  const tryAt = i => fetch(OSM_ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .catch(e => { if (i + 1 < OSM_ENDPOINTS.length) return tryAt(i + 1); throw e; });
+  return (osmPending[key] = tryAt(0).then(data => { osmStore.push({ bb, data, minor }); if (osmStore.length > 12) osmStore.shift(); return data; }).finally(() => { delete osmPending[key]; }));
+}
+const ROAD_STYLE = { // drawn in the map's pixels (twice the printed size)
+  major: { c: 'rgba(255,201,77,.95)', w: 6 }, mid: { c: 'rgba(255,224,138,.92)', w: 4.4 }, minor: { c: 'rgba(255,255,255,.85)', w: 3 },
+  service: { c: 'rgba(255,255,255,.7)', w: 2 }, track: { c: 'rgba(255,255,255,.75)', w: 1.8, dash: [7, 5] },
+};
+const roadClass = hw => /^(motorway|trunk|primary)/.test(hw) ? 'major' : /^(secondary|tertiary)/.test(hw) ? 'mid' : hw === 'track' ? 'track' : hw === 'service' ? 'service' : 'minor';
+function drawRoads(ctx, data, v) { // road lines go into the picture, under the trial outline, pins and tags
+  const ways = (data.elements || []).filter(e => e.type === 'way' && e.geometry), order = ['track', 'service', 'minor', 'mid', 'major'];
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  order.forEach(cl => { const st = ROAD_STYLE[cl];
+    ways.filter(w => roadClass(w.tags.highway) === cl).forEach(w => {
+      ctx.beginPath(); w.geometry.forEach((p, i) => { const [x, y] = scr(v, p); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.setLineDash(st.dash || []); ctx.lineWidth = st.w + 2.4; ctx.strokeStyle = 'rgba(0,0,0,.35)'; ctx.stroke();
+      ctx.lineWidth = st.w; ctx.strokeStyle = st.c; ctx.stroke();
+    }); });
+  ctx.restore();
+}
+const PLACE_RANK = { city: [0, 34], town: [1, 30], village: [2, 26], suburb: [3, 22], hamlet: [4, 22], neighbourhood: [5, 19], locality: [6, 18], farm: [7, 18], isolated_dwelling: [8, 17] };
+let measureCtx = null;
+const textW = (s, size) => { measureCtx = measureCtx || document.createElement('canvas').getContext('2d'); measureCtx.font = `bold ${size}px Helvetica, Arial, sans-serif`; return measureCtx.measureText(s).width; };
+function placeLabels(data, v, reserved) { // names that fit without covering each other, the trial, the pins or the tags
+  const W = v.W, H = v.H, boxes = (reserved || []).slice(), out = [];
+  const free = b => b.x0 >= 2 && b.y0 >= 2 && b.x1 <= W - 2 && b.y1 <= H - 2 && !boxes.some(o => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
+  const els = (data && data.elements) || [];
+  els.filter(e => e.type === 'node' && PLACE_RANK[e.tags.place]).sort((a, b) => PLACE_RANK[a.tags.place][0] - PLACE_RANK[b.tags.place][0]).forEach(e => {
+    const size = PLACE_RANK[e.tags.place][1], [x, y] = scr(v, e), w = textW(e.tags.name, size), b = { x0: x - w / 2 - 6, x1: x + w / 2 + 6, y0: y - size * 0.7, y1: y + size * 0.7 };
+    if (free(b)) { boxes.push(b); out.push({ x, y, a: 0, s: e.tags.name, size }); }
+  });
+  // road names: each name once, on the longest stretch of that road that is in view, turned to follow it
+  const runs = {};
+  els.filter(e => e.type === 'way' && e.geometry && (e.tags.name || e.tags.ref)).forEach(e => {
+    const nm = e.tags.name ? (e.tags.ref && /^(motorway|trunk|primary)/.test(e.tags.highway) ? `${e.tags.name} (${e.tags.ref})` : e.tags.name) : e.tags.ref;
+    const P = e.geometry.map(p => scr(v, p)), m = 12;
+    const clip = (a, b) => { // the part of a→b inside the map (Liang–Barsky), or null
+      let t0 = 0, t1 = 1; const dx = b[0] - a[0], dy = b[1] - a[1];
+      for (const [pp, qq] of [[-dx, a[0] - m], [dx, W - m - a[0]], [-dy, a[1] - m], [dy, H - m - a[1]]]) {
+        if (pp === 0) { if (qq < 0) return null; continue; }
+        const r = qq / pp; if (pp < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+      }
+      return [[a[0] + t0 * dx, a[1] + t0 * dy], [a[0] + t1 * dx, a[1] + t1 * dy], t1 < 1];
+    };
+    let cur = [];
+    const flush = () => { if (cur.length > 1) { const len = cur.reduce((s, q, i) => i ? s + Math.hypot(q[0] - cur[i - 1][0], q[1] - cur[i - 1][1]) : 0, 0); if (!runs[nm] || runs[nm].len < len) runs[nm] = { pts: cur, len, cl: roadClass(e.tags.highway) }; } cur = []; };
+    for (let i = 1; i < P.length; i++) { const c = clip(P[i - 1], P[i]); if (!c) { flush(); continue; } if (!cur.length) cur.push(c[0]); cur.push(c[1]); if (c[2]) flush(); }
+    flush();
+  });
+  const clRank = { major: 0, mid: 1, minor: 2, service: 3, track: 4 };
+  Object.entries(runs).sort((a, b) => clRank[a[1].cl] - clRank[b[1].cl] || b[1].len - a[1].len).forEach(([nm, r]) => {
+    const size = r.cl === 'major' ? 17 : 15, w = textW(nm, size); if (r.len < w + 24) return;
+    const at = dist => { let acc = 0; for (let i = 1; i < r.pts.length; i++) { const a = r.pts[i - 1], b = r.pts[i], d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (acc + d >= dist) { const f = (dist - acc) / (d || 1); return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]; } acc += d; } return r.pts[r.pts.length - 1]; };
+    for (const fr of [0.5, 0.35, 0.65, 0.2, 0.8]) { // the middle of the stretch first, then other spots along it if something is in the way
+      const c = r.len * fr; if (c - w / 2 < 4 || c + w / 2 > r.len - 4) continue;
+      const mid = at(c), p1 = at(c - w / 2), p2 = at(c + w / 2);
+      let ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]) * 180 / Math.PI; if (ang > 90) ang -= 180; if (ang < -90) ang += 180;
+      const rad = ang * Math.PI / 180, cx = Math.abs(Math.cos(rad)), sy = Math.abs(Math.sin(rad)), hw = (w / 2 + 4) * cx + size * 0.6 * sy, hh = (w / 2 + 4) * sy + size * 0.6 * cx;
+      const b = { x0: mid[0] - hw, x1: mid[0] + hw, y0: mid[1] - hh, y1: mid[1] + hh };
+      if (free(b)) { boxes.push(b); out.push({ x: mid[0], y: mid[1], a: ang, s: nm, size, road: true }); break; }
+    }
+  });
+  return out;
+}
+const labelsSvg = labels => labels.map(l => `<text x="${l.x.toFixed(1)}" y="${(l.y + l.size * 0.35).toFixed(1)}" text-anchor="middle" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="${l.size}" fill="#fff" stroke="#1a1a1a" stroke-width="${(l.size * 0.17).toFixed(1)}" stroke-linejoin="round" paint-order="stroke"${l.a ? ` transform="rotate(${l.a.toFixed(1)} ${l.x.toFixed(1)} ${l.y.toFixed(1)})"` : ''}>${esc(l.s)}</text>`).join('');
+
 async function locationPdf(t) {
   const L = t.loc || {}, cs = geoPts(t), pk = geoParking(t), ll = geoLL(t), all = [...cs, ...(pk ? [pk] : [])];
   const PW = 595.28, PH = 841.89, M = 28, R = PW - M;
   // the two maps: a wide overview and a close-up of the trial and its gate, framed as set in the preview
-  const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 216 }, CU = { x: M + 4, y: 440, w: R - M - 8, h: 242 };
+  const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 194 }, CU = { x: M + 4, y: 408, w: R - M - 8, h: 200 };
   let ov = null, cu = null;
   if (all.length) {
     const oV = locView(t, 'ov'), cV = locView(t, 'cu');
-    [ov, cu] = await Promise.all([mapJpeg(oV, oV.W, oV.H, ctx => drawLocOverlay(ctx, t, 'ov', oV)), mapJpeg(cV, cV.W, cV.H, ctx => drawLocOverlay(ctx, t, 'cu', cV))]);
+    const net = async (vv, which) => locNames(t, which) ? osmGet(vv).catch(() => null) : null;
+    const [oN, cN] = await Promise.all([net(oV, 'ov'), net(cV, 'cu')]);
+    const one = async (vv, which, data) => { let keep = []; const img = await mapJpeg(vv, vv.W, vv.H, ctx => { if (data) drawRoads(ctx, data, vv); keep = drawLocOverlay(ctx, t, which, vv); }, !!data); img.labels = data ? placeLabels(data, vv, keep) : []; return img; };
+    [ov, cu] = await Promise.all([one(oV, 'ov', oN), one(cV, 'cu', cN)]);
   }
   // ---- PDF ----
   const ops = [], f1 = n => (Math.round(n * 100) / 100).toString(), Y = y => f1(PH - y);
@@ -3187,42 +3340,54 @@ async function locationPdf(t) {
   // details table
   const os = ll ? osGridRef(ll.lat, ll.lon) : '';
   const left = [['Protocol No:', L.protocol || autoProtocol(t.trialId)], ['Location Name:', L.locationName], ['City:', L.city], ['County:', L.county], ['Country:', L.country], ['Co-operator:', L.cooperator]];
-  const right = [['Trial Number:', t.trialId], ['Postal/Zip Code:', L.postcode], ['OS grid Ref:', os], ['What3Words Trial:', L.w3wTrial], ['What3Words Parking:', L.w3wParking]];
+  const right = [['Trial Number:', t.trialId], ['Postal/Zip Code:', L.postcode], ['OS grid Ref:', os], ['What3Words Trial:', L.w3wTrial], ['What3Words Parking:', L.w3wParking], ['Plot Size (L × W):', plotSizeTxt(t)]];
   const RH = 19, T0 = 68;
   left.forEach(([k, v], i) => { const y = T0 + i * RH; text(M, y + 13.5, k, 10, true); box(M + 98, y, 152, RH); text(M + 102, y + 13.5, fit(v || '', 146, 10), 10); });
   right.forEach(([k, v], i) => { const y = T0 + i * RH, x = M + 262; text(x, y + 13.5, k, 10, true); box(x + 112, y, R - x - 112, RH); text(x + 116, y + 13.5, fit(v || '', R - x - 120, 10), 10); });
   // box 1: coordinates + overview map
-  const B1 = { y: 188, h: 228 }; box(M, B1.y, R - M, B1.h);
+  const B1 = { y: 188, h: 206 }; box(M, B1.y, R - M, B1.h);
   let yy = B1.y + 16;
   const cByLab = l => cs.find(c => c.lab === l), cTxt = c => c ? `${fmtCoord(c.lat)} , ${fmtCoord(c.lon)}` : '–';
   if (cs.length === 4) {
-    text(M + 8, yy, 'LL Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, cTxt(cByLab('LL')), 14); yy += 42;
-    [['UL', 'Upper Left'], ['UR', 'Upper Right'], ['LR', 'Lower Right']].forEach(([l, nm]) => { text(M + 8, yy, nm, 10, true); text(M + 8, yy + 14, cTxt(cByLab(l)), 10); yy += 33; });
+    text(M + 8, yy, 'LL Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, cTxt(cByLab('LL')), 14); yy += 40;
+    [['UL', 'Upper Left'], ['UR', 'Upper Right'], ['LR', 'Lower Right']].forEach(([l, nm]) => { text(M + 8, yy, nm, 10, true); text(M + 8, yy + 13, cTxt(cByLab(l)), 10); yy += 30; });
   } else if (cs.length) {
     text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); yy += 18;
     cs.forEach(c => { text(M + 8, yy, `Corner ${c.lab}: ${cTxt(c)}`, 10); yy += 16; });
     text(M + 8, yy, `Only ${cs.length} of 4 corners recorded`, 8); yy += 16;
   } else { text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, 'Not recorded – walk the trial in FART', 10); yy += 40; }
-  if (pk) { text(M + 8, yy, 'Parking / Gate', 10, true); text(M + 8, yy + 14, cTxt(pk), 10); yy += 33; }
+  if (pk) { text(M + 8, yy, 'Parking / Gate', 10, true); text(M + 8, yy + 13, cTxt(pk), 10); yy += 30; }
   const r = geoAccRange(all);
   wrap(`Phone GPS (WGS84)${r ? ', ' + r : ''}. ± = GPS accuracy when each point was recorded.`, 235, 7).forEach(l => { if (yy < B1.y + B1.h - 6) { text(M + 8, yy, l, 7); yy += 9; } });
   const imgs = [];
-  const place = (img, bx, name) => { if (!img || !img.data) return; image(name, bx.x, bx.y, bx.w, bx.h); imgs.push({ name, img }); };
+  const place = (img, bx, name) => { if (!img || !img.data) return; image(name, bx.x, bx.y, bx.w, bx.h); imgs.push({ name, img }); names(img, bx); };
+  const names = (img, bx) => { // map names as real text (white with a dark edge), kept inside the map
+    if (!img.labels || !img.labels.length) return;
+    const f = bx.w / img.w; ops.push(`q ${f1(bx.x)} ${Y(bx.y + bx.h)} ${f1(bx.w)} ${f1(bx.h)} re W n 1 j`);
+    img.labels.forEach(l => {
+      const sz = l.size * f, w = textW(l.s, l.size) * f, th = -l.a * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), px = bx.x + l.x * f, py = PH - (bx.y + l.y * f);
+      const tx = px + c * (-w / 2) - sn * (-0.35 * sz), ty = py + sn * (-w / 2) + c * (-0.35 * sz), tm = `${f1(c)} ${f1(sn)} ${f1(-sn)} ${f1(c)} ${f1(tx)} ${f1(ty)} Tm`, str = pdfStr(l.s);
+      ops.push(`BT /F2 ${f1(sz)} Tf ${tm} 1 Tr 0.1 0.1 0.1 RG ${f1(sz * 0.17)} w (${str}) Tj ET`, `BT /F2 ${f1(sz)} Tf ${tm} 0 Tr 1 1 1 rg (${str}) Tj ET`);
+    });
+    ops.push('0 g 0 G Q');
+  };
   place(ov, OV, 'Ov'); if (!ov) text(OV.x + 10, OV.y + OV.h / 2, 'No map – walk the trial in FART first', 9);
   box(M, CU.y - 4, R - M, CU.h + 8); place(cu, CU, 'Cu'); if (!cu) text(CU.x + 10, CU.y + CU.h / 2, 'No map – walk the trial in FART first', 9);
   // directions
-  const B3 = { y: CU.y + CU.h + 14, h: PH - M - 44 - (CU.y + CU.h + 14) }; box(M, B3.y, R - M, B3.h);
+  const B3 = { y: CU.y + CU.h + 14, h: PH - 76 - (CU.y + CU.h + 14) }; box(M, B3.y, R - M, B3.h); // down to just above the footer
   text(M + 8, B3.y + 14, 'Directions', 10, true);
   const dl = wrap(L.directions || '', R - M - 16, 10), maxL = Math.floor((B3.h - 22) / 13);
   dl.slice(0, maxL).forEach((l, i) => text(M + 8, B3.y + 29 + i * 13, l, 10));
-  // date, signature, page number
-  const yb = PH - M - 14, sg = mySig();
+  // footer: date and signature, and under them the confidentiality line with the page number
+  const yb = PH - 48, sg = mySig();
   text(M, yb, 'Date:', 10, true); text(M + 32, yb, L.date || dmy(today()), 10);
   text(M + 150, yb, 'Signed:', 10, true);
   let sgx = null;
-  if (sg && sg.gray && sg.w && sg.h) { let sh = 28, sw = sh * sg.w / sg.h; if (sw > 170) { sw = 170; sh = sw * sg.h / sg.w; } image('Sig', M + 196, yb + 4 - sh, sw, sh); sgx = sg; }
+  if (sg && sg.gray && sg.w && sg.h) { let sh = 26, sw = sh * sg.w / sg.h; if (sw > 170) { sw = 170; sh = sw * sg.h / sg.w; } image('Sig', M + 196, yb + 4 - sh, sw, sh); sgx = sg; }
   else ops.push(`0 G 0.6 w ${f1(M + 196)} ${Y(yb + 2)} m ${f1(M + 366)} ${Y(yb + 2)} l S`);
-  text(R - est('Page 1 of 1', 9), PH - 16, 'Page 1 of 1', 9);
+  ops.push(`0.6 G 0.5 w ${f1(M)} ${Y(PH - 34)} m ${f1(R)} ${Y(PH - 34)} l S 0 G`);
+  text(M, PH - 22, 'Corteva Confidential - Do Not Share Without Permission', 8.5);
+  text(R - est('Page 1 of 1', 8.5), PH - 22, 'Page 1 of 1', 8.5);
   // ---- assemble ----
   const content = ops.join('\n');
   let out = '%PDF-1.4\n'; const offs = [];
