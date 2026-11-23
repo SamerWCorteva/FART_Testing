@@ -238,6 +238,8 @@ body.locked { overflow:hidden; }
 .mappanel .actions button { min-height:38px; }
 .locmap { position:relative; width:100%; margin:6px 0 10px; background:#dfe7ef; border:1px solid var(--line); border-radius:10px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
 .locmap svg, .locmap canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+#cs-chips .chip { min-height:40px; padding:.2rem .9rem; font-size:.95rem; }
+#cs-chips .chip.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .minimap { width:100%; max-width:440px; height:auto; display:block; border:1px solid var(--line); border-radius:10px; background:#eef3f8; }
 .gpsready { border-radius:10px; padding:.5rem .7rem; font-weight:700; text-align:center; margin-bottom:8px; font-size:.95rem; line-height:1.3; }
 .gpsready.none { background:var(--line); color:var(--muted); }
@@ -368,7 +370,7 @@ button, a, .chip, label, input[type=checkbox], select, summary { touch-action:ma
 </div>
 <script>
 'use strict';
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 // keep APP_VERSION in step with VERSION in sw.js
 const cap = s => { s = String(s ?? ''); return s.charAt(0).toUpperCase() + s.slice(1); }; // first letter capital, used for titles and headers
 /* ---------- storage ---------- */
@@ -731,7 +733,10 @@ function inScope(t, a, trt) { // is this treatment assessed on this date?
   if (isUtc(t, trt)) return true; // the untreated check is always assessed
   return trtApps(t, trt).some(l => a.apps.includes(l));
 }
-const scopedPlots = (t, a) => plots(t).filter(p => inScope(t, a, p.trt));
+const setOn = (a, si) => !a || !Array.isArray(a.cropSets) || a.cropSets.includes(si || 0); // is this crop / variety assessed on this date? (all of them unless some were chosen)
+const cropsPill = (t, a) => multiSet(t) && Array.isArray(a.cropSets) ? `<span class="pill">Crops: ${esc(setsFor(t, a).map(i => cropSetName(t, i)).join(', '))}</span>` : '';
+const setsFor = (t, a) => (multiSet(t) ? t.sets.map((_, i) => i) : [0]).filter(si => setOn(a, si));
+const scopedPlots = (t, a) => plots(t).filter(p => inScope(t, a, p.trt) && setOn(a, p.set));
 const nPlots = (t, a) => scopedPlots(t, a).length;
 const scopeText = (t, a) => !appLetters(t).length ? '' : !a || !a.apps ? 'All Applications' : `Application${a.apps.length === 1 ? '' : 's'} ${a.apps.join(', ') || '–'}${t.untreated ? ' + Untreated' : ''}`;
 const applies = (t, ty, trt, a) => (!a || inScope(t, a, trt)) && (!ty.untreatedOnly || (!!t.untreated && trt === t.untreated));
@@ -742,7 +747,7 @@ const stageOf = (a, si) => si ? (((a.setBBCH || {})[si]) || {}) : { b: a.cropBBC
 const cropSetName = (t, i) => setName(t, i) || `Crop ${i + 1}`;
 function stageText(t, a) { // e.g. "32 (31–33)", or "Wheat 32 (31–33) · Barley 25" when the trial has several crops / varieties
   const one = st => st.b ? `${st.b}${st.min && st.max ? ` (${st.min}–${st.max})` : st.min ? ` (min ${st.min})` : st.max ? ` (max ${st.max})` : ''}` : '–';
-  return multiSet(t) ? t.sets.map((_, i) => `${cropSetName(t, i)} ${one(stageOf(a, i))}`).join(' · ') : (a.cropBBCH ? one(stageOf(a, 0)) : '');
+  return multiSet(t) ? setsFor(t, a).map(i => `${cropSetName(t, i)} ${one(stageOf(a, i))}`).join(' · ') : (a.cropBBCH ? one(stageOf(a, 0)) : '');
 }
 const cropParts = t => { const m = /^(.*?)\s*\(([A-Z0-9]+)\)\s*$/.exec(t.crop || ''); return m ? { name: m[1], code: m[2] } : { name: t.crop || '', code: '' }; };
 const needsStage = ty => !!ty.target && (ty.needStage !== undefined ? ty.needStage : ty.kind === 'weed');
@@ -1451,7 +1456,7 @@ function viewTrial(t) {
             <div class="small muted">${[a.assessor, stageText(t, a) ? `BBCH ${stageText(t, a)}` : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
           <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center"><span class="pill ${status[1]}">${status[0]}</span><button class="ibtn" data-cmt="${a.id}" type="button" title="Trial comment" aria-label="Trial comment for this date">${ICON.comment}${a.comment ? '<i class="dotmark"></i>' : ''}</button>${canLock ? `<button class="ibtn" data-${a.locked ? 'unlock' : 'lock'}="${a.id}" title="${a.locked ? 'Locked – tap to unlock' : 'Lock this date'}" aria-label="${a.locked ? 'Unlock this date' : 'Lock this date'}" type="button">${a.locked ? ICON.lock : ICON.unlock}</button>` : ''}</span>
         </div>
-        ${(appLetters(t).length || unsaved) ? `<div class="pills" style="margin:0 0 .5rem">${appLetters(t).length ? `<span class="pill">${esc(scopeText(t, a))}</span>` : ''}${unsaved ? '<span class="pill warn">Unsaved Changes</span>' : ''}</div>` : ''}
+        ${(appLetters(t).length || unsaved || cropsPill(t, a)) ? `<div class="pills" style="margin:0 0 .5rem">${appLetters(t).length ? `<span class="pill">${esc(scopeText(t, a))}</span>` : ''}${cropsPill(t, a)}${unsaved ? '<span class="pill warn">Unsaved Changes</span>' : ''}</div>` : ''}
         ${a.types.length ? `<div class="bar"><div style="width:${n ? done / n * 100 : 0}%"></div></div>
           <div class="small muted">${done} of ${n} Plots Complete${miss ? ` · ${miss} Value${miss === 1 ? '' : 's'} Still to Enter` : ''}</div>
           <details class="vlist"><summary>${a.types.length} Assessment${a.types.length === 1 ? '' : 's'}</summary>
@@ -1554,18 +1559,22 @@ function viewAssessForm(t, a, startStep) {
           <label class="field"><span>Assessor</span><input id="a-who" value="${esc(d.assessor)}" placeholder="Initials or name" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"></label>
         </div>
         <h3>Crop Growth Stage (BBCH)</h3>
-        ${multiSet(t) ? `<p class="small muted" style="margin:-4px 0 6px">This trial has ${t.sets.length} crops / varieties – enter the stage of each.</p><h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, 0))}</h3>` : ''}
+        ${multiSet(t) ? `<p class="small muted" style="margin:-4px 0 6px">This trial has ${t.sets.length} crops / varieties. Choose which ones you are assessing on this date, then enter the stage of each.</p>
+        <h3 class="h3s" style="margin:6px 0 4px">Crops to Assess</h3>
+        <div class="chips" id="cs-chips">${t.sets.map((_, i) => `<button type="button" class="chip" data-cs="${i}">${esc(cropSetName(t, i))}</button>`).join('')}</div>
+        <p class="small muted" id="cs-info" style="margin:.4rem 0 .6rem"></p>` : ''}
+        <div data-setblk="0">${multiSet(t) ? `<h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, 0))}</h3>` : ''}
         <div class="grid3">
           <label class="field"><span>Majority *</span><input id="a-bbch" inputmode="numeric" value="${esc(d.cropBBCH || '')}" placeholder="e.g. 32" autocomplete="off"></label>
           <label class="field"><span>Minimum</span><input id="a-bbch-min" inputmode="numeric" value="${esc(d.cropBBCHMin || '')}" autocomplete="off"></label>
           <label class="field"><span>Maximum</span><input id="a-bbch-max" inputmode="numeric" value="${esc(d.cropBBCHMax || '')}" autocomplete="off"></label>
-        </div>
-        ${multiSet(t) ? t.sets.slice(1).map((_, j) => { const i = j + 1, st = stageOf(d, i); return `<h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, i))}</h3>
+        </div></div>
+        ${multiSet(t) ? t.sets.slice(1).map((_, j) => { const i = j + 1, st = stageOf(d, i); return `<div data-setblk="${i}"><h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, i))}</h3>
         <div class="grid3">
           <label class="field"><span>Majority *</span><input data-sb="${i}" data-sf="b" inputmode="numeric" value="${esc(st.b || '')}" placeholder="e.g. 32" autocomplete="off"></label>
           <label class="field"><span>Minimum</span><input data-sb="${i}" data-sf="min" inputmode="numeric" value="${esc(st.min || '')}" autocomplete="off"></label>
           <label class="field"><span>Maximum</span><input data-sb="${i}" data-sf="max" inputmode="numeric" value="${esc(st.max || '')}" autocomplete="off"></label>
-        </div>`; }).join('') : ''}
+        </div></div>`; }).join('') : ''}
         <label class="field"><span>Notes</span><input id="a-notes" value="${esc(d.notes)}" placeholder="Weather, conditions…"></label>
         <div id="ap-block" ${appLetters(t).length ? '' : 'hidden'}>
           <h3 class="h3s">Plots to Assess</h3>
@@ -1640,6 +1649,25 @@ function viewAssessForm(t, a, startStep) {
     const nPlotsUtc = () => plots(t).filter(p => isUtc(t, p.trt)).length, n = nPlots(t, d), tot = plots(t).length;
     $('ap-info').textContent = sel ? `${n} of ${tot} plots will be assessed on this date${t.untreated ? ' (untreated always included)' : ''}.${n > nPlotsUtc() ? '' : ' Tick at least one application.'}` : `All ${tot} plots will be assessed on this date.`;
   }
+  function drawCrops() { // which crops / varieties are assessed on this date (null = all of them)
+    if (!multiSet(t)) return;
+    if (!Array.isArray(d.cropSets) || !d.cropSets.length) d.cropSets = null;
+    app.querySelectorAll('[data-cs]').forEach(b => b.classList.toggle('on', setOn(d, +b.dataset.cs)));
+    app.querySelectorAll('[data-setblk]').forEach(el => { el.hidden = !setOn(d, +el.dataset.setblk); });
+    const n = setsFor(t, d).length;
+    $('cs-info').textContent = n === t.sets.length ? `All ${n} crops / varieties – ${nPlots(t, d)} plots.` : `${n} of ${t.sets.length} crops / varieties: ${setsFor(t, d).map(i => cropSetName(t, i)).join(', ')} – ${nPlots(t, d)} plots.`;
+    drawScope();
+  }
+  app.querySelectorAll('[data-cs]').forEach(b => b.onclick = () => {
+    const i = +b.dataset.cs, cur = setsFor(t, d);
+    if (cur.includes(i)) {
+      if (cur.length === 1) { toast('Assess at least one crop / variety'); return; }
+      if (editing && scopedPlots(t, d).some(p => (p.set || 0) === i && plotStarted(d, p.plot)) && !confirm(`${cropSetName(t, i)} already has values on this date. Leave it out anyway? The values are kept, but hidden and not exported while it is left out.`)) return;
+      d.cropSets = cur.filter(x => x !== i);
+    } else d.cropSets = [...cur, i].sort((x, y) => x - y);
+    if (d.cropSets.length === t.sets.length) d.cropSets = null;
+    drawCrops(); watch();
+  });
   $('ap-all').onclick = () => { d.apps = null; drawScope(); };
   $('ap-sel').onclick = () => { if (!d.apps) d.apps = []; drawScope(); };
   const watch = () => { if (!finished) queueDraft(key, snap); };
@@ -1660,8 +1688,8 @@ function viewAssessForm(t, a, startStep) {
   function goStep(n) {
     if (n === 2) {
       if (!parseDmy($('a-date').value)) { alert('Please enter the date as DD/MM/YYYY.'); $('a-date').focus(); return; }
-      if (!$('a-bbch').value.trim()) { alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
-      const emptyStage = [...app.querySelectorAll('input[data-sb][data-sf="b"]')].find(inp => !inp.value.trim());
+      if (setOn(d, 0) && !$('a-bbch').value.trim()) { alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
+      const emptyStage = [...app.querySelectorAll('input[data-sb][data-sf="b"]')].find(inp => setOn(d, +inp.dataset.sb) && !inp.value.trim());
       if (emptyStage) { alert(`Please enter the crop growth stage (BBCH) of ${cropSetName(t, +emptyStage.dataset.sb)} – the majority value.`); emptyStage.focus(); return; }
     }
     showStep(n);
@@ -1828,8 +1856,8 @@ function viewAssessForm(t, a, startStep) {
     d.date = parseDmy($('a-date').value); d.assessor = $('a-who').value.trim().toUpperCase(); d.notes = $('a-notes').value.trim();
     d.cropBBCH = $('a-bbch').value.trim(); d.cropBBCHMin = $('a-bbch-min').value.trim(); d.cropBBCHMax = $('a-bbch-max').value.trim(); readSetStages();
     if (!d.date) { showStep(1); alert('Please enter the date as DD/MM/YYYY.'); $('a-date').focus(); return; }
-    if (!d.cropBBCH) { showStep(1); alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
-    if (multiSet(t)) { const miss = t.sets.findIndex((_, i) => i && !stageOf(d, i).b); if (miss > 0) { showStep(1); alert(`Please enter the crop growth stage (BBCH) of ${cropSetName(t, miss)} – the majority value.`); app.querySelector(`[data-sb="${miss}"][data-sf="b"]`).focus(); return; } }
+    if (setOn(d, 0) && !d.cropBBCH) { showStep(1); alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
+    if (multiSet(t)) { const miss = t.sets.findIndex((_, i) => i && setOn(d, i) && !stageOf(d, i).b); if (miss > 0) { showStep(1); alert(`Please enter the crop growth stage (BBCH) of ${cropSetName(t, miss)} – the majority value.`); app.querySelector(`[data-sb="${miss}"][data-sf="b"]`).focus(); return; } }
     const tr = v => String(v ?? '').trim();
     d.types = d.types.map(ty => ({ ...ty, name: tr(ty.name), unit: tr(ty.unit), min: tr(ty.min), max: tr(ty.max), stage: tr(ty.stage), stageMin: tr(ty.stageMin), stageMax: tr(ty.stageMax), sizeH: tr(ty.sizeH), sizeW: tr(ty.sizeW), subs: subsOf(ty), atype: tr(ty.atype) })).filter(ty => ty.name);
     if (startAfter && !d.types.length) { showStep(2); alert('Add at least one assessment first.'); return; }
@@ -1879,7 +1907,7 @@ function viewAssessForm(t, a, startStep) {
     if (dirty && !confirm(editing ? 'Discard your changes to this assessment date?' : 'Discard this unfinished assessment date? Everything you entered will be lost.')) return;
     finished = true; dropDraft(key); go(back);
   };
-  drawMenu(); drawBuilder(); drawTypes(); drawScope(); showStep(step);
+  drawMenu(); drawBuilder(); drawTypes(); drawScope(); drawCrops(); showStep(step);
 }
 
 /* ---------- DATA ENTRY (one plot per page) ---------- */
@@ -2118,7 +2146,7 @@ function viewReview(t, a) {
   app.innerHTML = `
   <header class="top"><a class="back" href="#/trial/${t.id}">← ${esc(t.trialId)}</a><h1>Review · ${esc(dmy(a.date))}</h1><a class="brand sm" href="#/" aria-label="FART – back to the home page"><b>FART</b><span>Field Assessment Recording Tool</span></a></header>
   <main>
-    ${appLetters(t).length ? `<div class="pills" style="margin:0 0 .5rem"><span class="pill">${esc(scopeText(t, a))}</span></div>` : ''}
+    ${appLetters(t).length || cropsPill(t, a) ? `<div class="pills" style="margin:0 0 .5rem">${appLetters(t).length ? `<span class="pill">${esc(scopeText(t, a))}</span>` : ''}${cropsPill(t, a)}</div>` : ''}
     <p class="small muted">${done} of ${n} plots complete. These are the raw values (switch the view below). Edit any value directly; tap a plot number to open that plot.</p>
     ${bufferPlots(t).length ? `<p class="small muted">Buffer plots (no values recorded): ${bufferPlots(t).sort((x, y) => x.plot - y.plot).map(b => plotTag(t, b.plot)).join(', ')}</p>` : ''}
     <div class="actions">
@@ -2143,7 +2171,7 @@ function viewReview(t, a) {
         ${byPlot ? plotTable(ty) : `<div class="scroll"><table class="review"><thead><tr>
           <th class="l">Trt</th>${range(t.reps).map(r => `<th>Rep ${r}</th>`).join('')}
         </tr></thead><tbody>
-          ${(multiSet(t) ? t.sets.map((_, i) => i) : [0]).map(si => (multiSet(t) ? `<tr class="setrow"><td colspan="${t.reps + 1}">${esc(setName(t, si))}</td></tr>` : '') + range(t.trts).filter(k => applies(t, ty, k, a)).map(k => `<tr class="${k === t.untreated ? 'utc' : ''}"><td class="l"><b>${k}</b>${k === t.untreated ? ' <span class="muted small">(UTC)</span>' : ''}${trtName(t, k) ? `<span class="tn">${esc(trtName(t, k))}</span>` : ''}</td>
+          ${setsFor(t, a).map(si => (multiSet(t) ? `<tr class="setrow"><td colspan="${t.reps + 1}">${esc(setName(t, si))}</td></tr>` : '') + range(t.trts).filter(k => applies(t, ty, k, a)).map(k => `<tr class="${k === t.untreated ? 'utc' : ''}"><td class="l"><b>${k}</b>${k === t.untreated ? ' <span class="muted small">(UTC)</span>' : ''}${trtName(t, k) ? `<span class="tn">${esc(trtName(t, k))}</span>` : ''}</td>
             ${range(t.reps).map(r => {
               const pl = allPlots.find(q => (q.set || 0) === si && q.rep === r && q.trt === k);
               if (!pl) return `<td class="muted">—</td>`;
@@ -2165,7 +2193,7 @@ function viewReview(t, a) {
     document.getElementById('bp-scale').hidden = !bpOn;
     document.querySelectorAll('#bp-scale [data-sc]').forEach(b => b.classList.toggle('on', b.dataset.sc === sc));
     if (!bpOn) { el.innerHTML = ''; applySel(); return; }
-    el.innerHTML = a.types.map(ty => (multiSet(t) ? t.sets.map((_, i) => i) : [0]).map(si => boxPlotSvg(t, a, ty, selPt, si, sc)).join('')).join('');
+    el.innerHTML = a.types.map(ty => setsFor(t, a).map(si => boxPlotSvg(t, a, ty, selPt, si, sc)).join('')).join('');
     applySel();
   }
   document.getElementById('bp-scale').onclick = e => { const b = e.target.closest('[data-sc]'); if (!b) return; db.settings.bpScale = b.dataset.sc; save(); drawBoxPlots(); };
@@ -2189,7 +2217,7 @@ function viewReview(t, a) {
     const missing = new Set(), flagged = [], spreadKeys = new Set();
     const link = (pl, tid) => `<a href="#" data-cell="${pl}" ${tid ? `data-ty="${tid}"` : ''}>${pn(pl)}</a>`;
     a.types.forEach(ty => {
-      const grp = (multiSet(t) ? t.sets.map((_, i) => i) : [0]).flatMap(si => range(t.trts).filter(k => applies(t, ty, k, a)).map(k => ({ k, si, vs: allPlots.filter(p => p.trt === k && (p.set || 0) === si).map(p => ({ plot: p.plot, n: num(val(a, p.plot, ty.id)) })).filter(v => v.n != null) })));
+      const grp = setsFor(t, a).flatMap(si => range(t.trts).filter(k => applies(t, ty, k, a)).map(k => ({ k, si, vs: allPlots.filter(p => p.trt === k && (p.set || 0) === si).map(p => ({ plot: p.plot, n: num(val(a, p.plot, ty.id)) })).filter(v => v.n != null) })));
       const every = grp.flatMap(g => g.vs.map(v => Math.abs(v.n)));
       const bounded = ty.min !== '' && ty.max !== '' && Number(ty.max) > Number(ty.min);
       const floor = OUTLIER_FLOOR * (bounded ? Number(ty.max) - Number(ty.min) : Math.max(0, ...every));
@@ -2208,7 +2236,7 @@ function viewReview(t, a) {
       });
     });
     a.types.forEach(ty => allPlots.forEach(p => {
-      if (!applies(t, ty, p.trt, a)) return;
+      if (!applies(t, ty, p.trt, a) || !setOn(a, p.set)) return;
       const td = app.querySelector(`td.v[data-plot="${p.plot}"][data-t="${ty.id}"]`); if (!td) return;
       const raw = val(a, p.plot, ty.id), rng = outOfRange(ty, raw);
       td.classList.toggle('miss', raw === '');
@@ -2277,7 +2305,7 @@ const colVal = (c, plot) => c.k === null ? val(c.a, plot, c.ty.id) : ((((c.a.dat
 const exportSig = list => list.map(sigOf).find(Boolean) || null; // signature printed on an export: always the original assessor's
 function excelFile(t, only) {
   const as = (only ? [only] : [...t.assessments]).sort((x, y) => (x.date || '').localeCompare(y.date || '') || x.created - y.created);
-  const ps = plots(t).filter(p => as.some(a => inScope(t, a, p.trt))).sort((x, y) => x.plot - y.plot); // only plots that were assessed on one of these dates
+  const ps = plots(t).filter(p => as.some(a => inScope(t, a, p.trt) && setOn(a, p.set))).sort((x, y) => x.plot - y.plot); // only plots that were assessed on one of these dates
   const hasApps = appLetters(t).length > 0;
   const cell = raw => { const n = num(raw); return n != null ? n : (raw === '' ? null : raw); };
   const cols = expandCols(as).map(c => ({ ...c, label: `${c.label} ${dmy(c.a.date)}` }));
@@ -2291,8 +2319,10 @@ function excelFile(t, only) {
     const gc = geoLabelled(t);
     if (gc.length) rows.push([B('Trial corners (WGS84)'), ...gc.map(c => `${c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), B('Accuracy'), `Phone GPS ${geoAccRange(gc)}`.trim()]);
     as.forEach(a => {
-      rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B(ms ? `Crop GS (BBCH) majority – ${cropSetName(t, 0)}` : 'Crop GS (BBCH) majority'), a.cropBBCH || null, B('Min'), a.cropBBCHMin || null, B('Max'), a.cropBBCHMax || null, B('Notes'), a.notes || null]);
-      if (ms) t.sets.forEach((_, i) => { if (!i) return; const st = stageOf(a, i); rows.push([null, null, null, null, B(`Crop GS (BBCH) majority – ${cropSetName(t, i)}`), st.b || null, B('Min'), st.min || null, B('Max'), st.max || null]); });
+      const sets = setsFor(t, a), s0 = stageOf(a, sets[0] || 0);
+      rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B(ms ? `Crop GS (BBCH) majority – ${cropSetName(t, sets[0] || 0)}` : 'Crop GS (BBCH) majority'), s0.b || null, B('Min'), s0.min || null, B('Max'), s0.max || null, B('Notes'), a.notes || null]);
+      if (ms) sets.slice(1).forEach(i => { const st = stageOf(a, i); rows.push([null, null, null, null, B(`Crop GS (BBCH) majority – ${cropSetName(t, i)}`), st.b || null, B('Min'), st.min || null, B('Max'), st.max || null]); });
+      if (ms && sets.length < t.sets.length) rows.push([null, B('Crops assessed'), sets.map(i => cropSetName(t, i)).join(', ')]);
       const seenT = new Set();
       a.types.filter(needsStage).forEach(ty => {
         const k = ty.kind + ':' + ty.target; if (seenT.has(k)) return; seenT.add(k);
@@ -2308,12 +2338,12 @@ function excelFile(t, only) {
   // 1. Plot data (wide) – raw values as recorded
   const wide = [...detail, [], [...['Plot', 'Rep', 'Trt', 'Treatment', ...(hasApps ? ['Applications'] : []), 'Crop', 'Crop code', ...(ms ? ['Crop/Variety'] : [])].map(B), ...cols.map(c => B(c.label)), ...noteCols.map(a => B(`Notes ${dmy(a.date)}`))]];
   [...ps.map(p => ({ p })), ...bufferPlots(t).map(b => ({ b }))].sort((x, y) => (x.p || x.b).plot - (y.p || y.b).plot).forEach(({ p, b }) => b ? wide.push([pn(b.plot), b.rep || null, null, 'Buffer', ...(hasApps ? [null] : []), cp.name || null, cp.code || null, ...(ms ? [setName(t, b.set)] : []), ...cols.map(() => 'Buffer'), ...noteCols.map(() => null)]) : wide.push([pn(p.plot), p.rep, p.trt, trtName(t, p.trt) || null, ...(hasApps ? [trtApps(t, p.trt).join(', ') || null] : []), cp.name || null, cp.code || null, ...(ms ? [setName(t, p.set)] : []),
-    ...cols.map(c => applies(t, c.ty, p.trt, c.a) ? cell(colVal(c, p.plot)) : null), ...noteCols.map(a => (a.data[p.plot] && a.data[p.plot]._note) || null)]));
+    ...cols.map(c => applies(t, c.ty, p.trt, c.a) && setOn(c.a, p.set) ? cell(colVal(c, p.plot)) : null), ...noteCols.map(a => (a.data[p.plot] && a.data[p.plot]._note) || null)]));
 
   // 2. Long format (one row per recorded value, one per subsample — good for pivot tables, R, ARM import)
   const long = [['Trial', 'Crop', 'Crop code', ...(ms ? ['Crop/Variety'] : []), 'Plot', 'Rep', 'Trt', 'Treatment', 'Untreated', 'Date', 'Assessor', 'Crop BBCH (majority)', 'Crop BBCH min', 'Crop BBCH max', 'Assessment', 'Assessment type', 'Target', 'Target stage (majority)', 'Target stage min', 'Target stage max', 'Weed height', 'Weed width', 'Weed size unit', 'Leaf level', 'Subsample', 'Unit', 'Value', 'Plot note', ...(hasApps ? ['Applications assessed'] : [])].map(B)];
   as.forEach(a => ps.forEach(p => expandCols([a]).forEach(c => {
-    const ty = c.ty; if (!applies(t, ty, p.trt, a)) return;
+    const ty = c.ty; if (!applies(t, ty, p.trt, a) || !setOn(a, p.set)) return;
     long.push([t.trialId, cp.name || null, cp.code || null, ...(ms ? [setName(t, p.set)] : []), pn(p.plot), p.rep, p.trt, trtName(t, p.trt) || null, p.trt === t.untreated ? 'Yes' : null, dmy(a.date), a.assessor || null, stageOf(a, p.set || 0).b || null, stageOf(a, p.set || 0).min || null, stageOf(a, p.set || 0).max || null, ty.name, ty.atype || null, ty.target || null, ty.stage || null, ty.stageMin || null, ty.stageMax || null, ty.sizeH || null, ty.sizeW || null, (ty.sizeH || ty.sizeW) ? (ty.sizeUnit || 'cm') : null, ty.leaf || null, c.k === null ? null : c.k + 1, ty.unit || null, cell(colVal(c, p.plot)), (a.data[p.plot] && a.data[p.plot]._note) || null, ...(hasApps ? [scopeText(t, a)] : [])]);
   })));
 
@@ -2439,7 +2469,7 @@ function pdfFile(t, list) {
     const notes = Object.entries(a.data).filter(([, r]) => r._note).sort((x, y2) => x[0] - y2[0]);
     if (notes.length) { ensure(40); line('Plot Notes', 11, true, 3); notes.forEach(([pl, r]) => line(`Plot ${plotTag(t, +pl)}: ${r._note}`, 9, false, 2)); }
     newPage(); line(`Treatment Tables – ${dmy(a.date)}`, 12, true, 4);
-    a.types.forEach(ty => (ms ? t.sets.map((_, i) => i) : [0]).forEach(si => {
+    a.types.forEach(ty => setsFor(t, a).forEach(si => {
       const ks = range(t.trts).filter(k => applies(t, ty, k, a));
       ensure(60); line(typeLabel(ty) + (ty.untreatedOnly ? '  (Untreated plots only)' : '') + (ms ? ' – ' + setName(t, si) : ''), 11, true, 3);
       const repW = Math.max(30, Math.min(80, (W - 2 * M - 170) / t.reps));
