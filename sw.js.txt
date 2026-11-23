@@ -1,0 +1,29 @@
+// FART – Field Assessment Recording Tool: service worker (makes the app work offline)
+// keep VERSION in step with APP_VERSION in index.html
+const VERSION = 42;
+const CACHE = `field-assessments-v${VERSION}`;
+const CORE = ['./', './index.html', './manifest.webmanifest']; // must be saved for the app to open offline
+const EXTRA = ['./icon-192.png', './icon-512.png', './apple-touch-icon.png']; // saved if they exist
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(async c => {
+    await c.addAll(CORE.map(u => new Request(u, { cache: 'reload' }))); // always fetch fresh copies, not the browser's HTTP cache
+    await Promise.all(EXTRA.map(u => c.add(new Request(u, { cache: 'reload' })).catch(() => {})));
+  }).then(() => self.skipWaiting())); // the new version takes over straight away ("Check for Updates" then reloads)
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys()
+    .then(keys => Promise.all(keys.filter(k => k.startsWith('field-assessments-v') && k !== CACHE).map(k => caches.delete(k)))) // remove older versions
+    .then(() => self.clients.claim()));
+});
+
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return; // map tiles and other sites go straight to the network
+  if (req.mode === 'navigate') { // opening the app: the saved copy, so it starts instantly with no signal
+    e.respondWith(caches.match('./index.html', { ignoreSearch: true }).then(r => r || fetch(req)));
+    return;
+  }
+  e.respondWith(caches.match(req, { ignoreSearch: true }).then(r => r || fetch(req)));
+});

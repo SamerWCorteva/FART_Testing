@@ -366,7 +366,7 @@ button, a, .chip, label, input[type=checkbox], select, summary { touch-action:ma
 </div>
 <script>
 'use strict';
-const APP_VERSION = 40;
+const APP_VERSION = 42;
 // keep APP_VERSION in step with VERSION in sw.js
 const cap = s => { s = String(s ?? ''); return s.charAt(0).toUpperCase() + s.slice(1); }; // first letter capital, used for titles and headers
 /* ---------- storage ---------- */
@@ -829,6 +829,7 @@ function render() {
     if (!t) return viewHome();
     if (!p[2]) return viewTrial(t);
     if (p[2] === 'edit') return viewTrialForm(t);
+    if (p[2] === 'location') return viewLocation(t);
     if (p[2] === 'a') {
       if (p[3] === 'new') return viewAssessForm(t, null);
       const a = t.assessments.find(x => x.id === p[3]);
@@ -1094,6 +1095,7 @@ function viewTrialForm(trial) {
       g.cells.forEach((row, r) => row.forEach((c, i) => { if (stored[r][i] !== '' && String(stored[r][i]) !== String(c.rep)) { c.rep = stored[r][i]; c.repManual = true; } }));
       return g;
     }
+    if (dims && dims.across && dims.up) return buildGrid(dims.across, dims.up); // a copied trial: same field size, no plots filled in yet
     return buildGrid(clamp(d.trts, 1, 60), clamp(d.reps, 1, 60));
   }
   const cellErr = (g, cell, r, c) => ({
@@ -2264,7 +2266,7 @@ function excelFile(t, only) {
   const detail = (() => {
     const rows = [[B('Trial'), t.trialId, B('Type'), t.type || null, B('Crop'), cp.name || null, B('Crop code'), cp.code || null, B('Reps × Trts'), `${t.reps} × ${t.trts}`, ...(hasApps ? [B('Applications'), appLetters(t).length] : [])]];
     const gc = geoPts(t);
-    if (gc.length) rows.push([B('Trial corners (WGS84)'), ...gc.map(c => `${c.n}) ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), B('Accuracy'), `Phone GPS ${geoAccRange(gc)}, not survey grade`.replace('  ', ' ')]);
+    if (gc.length) rows.push([B('Trial corners (WGS84)'), ...gc.map(c => `${c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), B('Accuracy'), `Phone GPS ${geoAccRange(gc)}, not survey grade`.replace('  ', ' ')]);
     as.forEach(a => {
       rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B('Crop GS (BBCH) majority'), a.cropBBCH || null, B('Min'), a.cropBBCHMin || null, B('Max'), a.cropBBCHMax || null, B('Notes'), a.notes || null]);
       const seenT = new Set();
@@ -2313,7 +2315,7 @@ function excelFile(t, only) {
     ...as.map(a => [dmy(a.date), a.assessor || null, a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null, a.types.map(typeLabel).join('; '), `${countDone(t, a)} / ${nPlots(t, a)}`, a.notes || null, ...(hasApps ? [scopeText(t, a)] : [])])];
   if (as.some(a => a.comment)) info.push([], [B('Trial comments (by assessment date)')], [B('Date'), B('Comment')], ...as.filter(a => a.comment).map(a => [dmy(a.date), a.comment]));
   if (as.some(a => (a.unlockLog || []).length)) info.push([], [B('Data changes after unlocking')], [B('Date'), B('Unlocked'), B('By'), B('Locked again'), B('Reason for change')], ...as.flatMap(a => (a.unlockLog || []).map(l => [dmy(a.date), dtTxt(l.ts), l.who || null, l.relocked ? dtTxt(l.relocked) : 'Not locked again', l.reason])));
-  if (geoPts(t).length) info.push([], [B('Trial corner coordinates (WGS84, decimal degrees)')], [B('Corner'), B('Latitude'), B('Longitude'), B('GPS accuracy (m)')], ...geoPts(t).map(c => [c.n, +fmtCoord(c.lat), +fmtCoord(c.lon), c.acc ? Math.round(c.acc) : null]), [B('Accuracy'), GEO_NOTE]);
+  if (geoPts(t).length) info.push([], [B('Trial corner coordinates (WGS84, decimal degrees)')], [B('Corner'), B('Latitude'), B('Longitude'), B('GPS accuracy (m)')], ...geoPts(t).map(c => [CORNER_NAME[c.lab] || c.lab, +fmtCoord(c.lat), +fmtCoord(c.lon), c.acc ? Math.round(c.acc) : null]), [B('Accuracy'), GEO_NOTE]);
 
   const blob = buildXlsx([
     { name: 'Plot Data', rows: wide, freeze: detail.length <= 5 ? detail.length + 2 : false },
@@ -2488,10 +2490,10 @@ function pdfFile(t, list) {
 
 /* ---------- share a trial with another device ---------- */
 function stampOwn(t) { let n = 0; t.assessments.forEach(a => { if (!a.device) { stampAssessment(a); n++; } }); if (n) save(); } // dates made before signatures existed belong to this device, so mark them before they leave it
-function copyTrial(t) { // a new trial with the same setup (layout, randomization, treatments, applications); no dates, data, comments or GPS corners
+function copyTrial(t) { // a new trial with the same setup, opened in Add Trial to fill in the randomization; nothing else is carried over
   let id = `${t.trialId}-COPY`;
   for (;;) {
-    const v = prompt(`Copy the setup of ${t.trialId} into a new trial.\n\nThe plot layout, randomization, treatments and trial details are copied. Assessment dates, data, comments and GPS corners are not.\n\nNew Trial ID:`, id);
+    const v = prompt(`Copy the setup of ${t.trialId} into a new trial.\n\nCopied: trial details, crop, reps, treatments, applications and plot layout size.\nNot copied: the randomization (you fill it in next), assessment dates, data, comments, GPS corners and the location sheet.\n\nNew Trial ID:`, id);
     if (v === null) return;
     id = v.trim().toUpperCase();
     if (!id) { alert('Please enter a Trial ID for the new trial.'); continue; }
@@ -2499,10 +2501,15 @@ function copyTrial(t) { // a new trial with the same setup (layout, randomizatio
     if (db.trials.some(x => x.trialId.toLowerCase() === id.toLowerCase()) && !confirm(`A trial called "${id}" already exists. Use this Trial ID anyway?`)) continue;
     break;
   }
-  const c = JSON.parse(JSON.stringify(t));
-  Object.assign(c, { id: uid(), trialId: id, assessments: [], created: Date.now(), updated: Date.now() });
-  delete c.geo; delete c.archived;
-  db.trials.push(c); save(); toast(`${id} created – a copy of ${t.trialId}`); go(`#/trial/${c.id}`);
+  if (getDraft('trial:new') && !confirm('You have an unfinished new trial. Replace it with this copy?')) return;
+  const src = JSON.parse(JSON.stringify(t));
+  const { assessments, geo, loc, archived, updated, layout, plotList, grid, sets, ...keep } = src;
+  const d = { ...keep, id: uid(), trialId: id, created: Date.now(), layout: null, plotList: [],
+    sets: (sets && sets.length ? sets : [{ name: '', grid }]).map(x => ({ name: x.name || '', dims: x.grid || x.dims || null, grid: null })) }; // same crops / varieties and field size, no plots filled in
+  dropDraft('trial:new');
+  db.drafts = db.drafts || {}; db.drafts['trial:new'] = { data: { d, ui: { cur: 0, layer: 'plot' } }, step: 1, saved: Date.now() }; persistQuiet();
+  toast(`Copy of ${t.trialId} – check the details, then fill in the randomization and save`);
+  go('#/trial/new');
 }
 function shareTrial(t) { // the whole trial (layout, assessments and values) as one small file
   stampOwn(t);
@@ -2600,8 +2607,22 @@ function areaM2(pts) { // shoelace on local metres
 }
 const fmtCoord = n => n.toFixed(6);
 const fmtM = m => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : (m >= 100 ? Math.round(m) : m.toFixed(1)) + ' m';
-const geoPts = t => ((t.geo && t.geo.corners) || []).map((c, i) => c ? { ...c, n: i + 1 } : null).filter(Boolean);
-const geoCopyText = t => geoPts(t).map(c => `Corner ${c.n}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`).join('\n');
+const CORNER_ORDER = ['LL', 'UL', 'UR', 'LR'], CORNER_NAME = { LL: 'Lower Left', UL: 'Upper Left', UR: 'Upper Right', LR: 'Lower Right' };
+function slotLabels(t) { // name each recorded corner by where it is on a north-up map: Lower Left, Upper Left, Upper Right, Lower Right
+  const cs = (t.geo && t.geo.corners) || [], out = [0, 1, 2, 3].map(i => String(i + 1));
+  if ([0, 1, 2, 3].some(i => !cs[i])) return out;
+  const lat0 = (cs[0].lat + cs[1].lat + cs[2].lat + cs[3].lat) / 4, k = Math.cos(lat0 * Math.PI / 180);
+  const s = [0, 1, 2, 3].map(i => ({ i, x: cs[i].lon * k, y: cs[i].lat })).sort((a, b) => a.y - b.y);
+  const lo = s.slice(0, 2).sort((a, b) => a.x - b.x), hi = s.slice(2).sort((a, b) => a.x - b.x);
+  out[lo[0].i] = 'LL'; out[lo[1].i] = 'LR'; out[hi[0].i] = 'UL'; out[hi[1].i] = 'UR';
+  return out;
+}
+const geoPts = t => { // the recorded corners: LL, UL, UR, LR order once all 4 are in (that is also the way round the outline)
+  const lab = slotLabels(t), cs = ((t.geo && t.geo.corners) || []).map((c, i) => c ? { ...c, n: i + 1, lab: lab[i] } : null).filter(Boolean);
+  return cs.length === 4 ? CORNER_ORDER.map(l => cs.find(c => c.lab === l)) : cs;
+};
+const geoParking = t => (t.geo && t.geo.parking) || null;
+const geoCopyText = t => [...geoPts(t).map(c => `${CORNER_NAME[c.lab] || 'Corner ' + c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), ...(geoParking(t) ? [`Parking / Gate: ${fmtCoord(geoParking(t).lat)}, ${fmtCoord(geoParking(t).lon)}`] : [])].join('\n');
 function fitView(pts, W, H, pad) { // a map view (centre + pixels per map unit) that holds all the points
   const xs = pts.map(p => mercX(p.lon)), ys = pts.map(p => mercY(p.lat)), lat = pts.reduce((s, p) => s + p.lat, 0) / pts.length;
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), minSpan = 40 / worldM(lat); // never tighter than ~40 m
@@ -2627,31 +2648,35 @@ function outlineSvg(v, cs, light) { // the trial outline with numbered corners
   let s = '';
   if (P.length >= 3) s += `<polygon points="${pts}" fill="${col}" fill-opacity=".22" stroke="${col}" stroke-width="3" stroke-linejoin="round"/>`;
   else if (P.length === 2) s += `<polyline points="${pts}" fill="none" stroke="${col}" stroke-width="3"/>`;
-  P.forEach((q, i) => { s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="11" fill="${light ? '#0072CE' : '#fff'}" stroke="${light ? '#fff' : '#000'}" stroke-width="2"/><text x="${q[0].toFixed(1)}" y="${(q[1] + 4.5).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="${light ? '#fff' : '#000'}">${cs[i].n}</text>`; });
+  P.forEach((q, i) => { s += `<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="13" fill="${light ? '#0072CE' : '#fff'}" stroke="${light ? '#fff' : '#000'}" stroke-width="2"/><text x="${q[0].toFixed(1)}" y="${(q[1] + 4.5).toFixed(1)}" text-anchor="middle" font-size="${String(cs[i].lab).length > 1 ? 11 : 13}" font-weight="700" fill="${light ? '#fff' : '#000'}">${cs[i].lab}</text>`; });
   return s;
 }
 const GEO_NOTE = "Coordinates are WGS84 decimal degrees taken from the phone's GPS. The ± value next to each corner is the GPS's own accuracy estimate at the moment it was recorded (roughly a 2-in-3 chance the true corner lies within that distance). Phone GPS is usually good to about 3–10 m in open ground, and worse near trees, buildings or in poor weather. Use these to find and map the trial, not as a land survey.";
 const geoAccRange = cs => { const a = cs.map(c => Math.round(c.acc || 0)).filter(Boolean); if (!a.length) return ''; const lo = Math.min(...a), hi = Math.max(...a); return lo === hi ? `±${lo} m` : `±${lo}–${hi} m`; };
-const geoHeaderTxt = t => { const cs = geoPts(t); if (!cs.length) return ''; const r = geoAccRange(cs); return `Trial corners (WGS84, phone GPS${r ? ' ' + r : ''}, not survey grade): ${cs.map(c => `${c.n}) ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}`).join('    ')}`; };
+const geoHeaderTxt = t => { const cs = geoPts(t); if (!cs.length) return ''; const r = geoAccRange(cs); return `Trial corners (WGS84, phone GPS${r ? ' ' + r : ''}, not survey grade): ${cs.map(c => `${c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}`).join('    ')}`; };
+const parkSvg = (v, p) => { const [x, y] = scr(v, p); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="#e8590c" stroke="#fff" stroke-width="2.5"/><text x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">P</text>`; };
 function geoCardHtml(t) {
-  const cs = geoPts(t), n = cs.length;
+  const cs = geoPts(t), n = cs.length, pk = geoParking(t), first = cs[0] || pk;
   const info = n === 4 ? `Sides: ${[[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => fmtM(distM(cs[i], cs[j]))).join(' · ')} · Area ≈ ${Math.round(areaM2(cs)).toLocaleString('en-GB')} m²` : '';
   return `<div class="arow"><h2 style="margin:0">Trial Location</h2><button id="geo-walk" type="button" class="primary small">${n ? 'Walk the Trial Again' : 'Walk the Trial'}</button></div>
-    ${n ? `<svg class="minimap" id="geo-mini" viewBox="0 0 320 200" style="margin-top:10px;cursor:zoom-in" role="button" tabindex="0" aria-label="Outline of the trial – tap to open the map full screen"></svg>
+    ${first ? `<svg class="minimap" id="geo-mini" viewBox="0 0 320 200" style="margin-top:10px;cursor:zoom-in" role="button" tabindex="0" aria-label="Outline of the trial – tap to open the map full screen"></svg>
       <p class="small muted" style="margin:4px 0 0">Tap the map to open it full screen, where you can pinch to zoom.</p>
-      <div style="margin-top:8px">${cs.map(c => `<div class="cornrow"><span class="cn">${c.n}</span><span class="cc">${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)} m</span>` : ''}</span></div>`).join('')}</div>
+      <div style="margin-top:8px">${cs.map(c => `<div class="cornrow"><span class="cn">${c.lab}</span><span class="cc">${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)} m</span>` : ''}</span></div>`).join('')}
+        ${pk ? `<div class="cornrow"><span class="cn" style="background:#e8590c">P</span><span class="cc">${fmtCoord(pk.lat)}, ${fmtCoord(pk.lon)} <span class="muted small">Parking / Gate</span></span></div>` : ''}</div>
       ${info ? `<p class="small muted" style="margin:6px 0 0">${esc(info)}</p>` : ''}
+      ${n === 4 ? '<p class="small muted" style="margin:6px 0 0">LL Lower Left · UL Upper Left · UR Upper Right · LR Lower Right (north at the top).</p>' : ''}
       <p class="small muted" style="margin:6px 0 0"><b>Accuracy:</b> ${esc(GEO_NOTE)}</p>
-      <div class="actions" style="margin:10px 0 0"><button id="geo-copy" type="button" class="small">Copy Coordinates</button><a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${cs[0].lat},${cs[0].lon}">Open Corner ${cs[0].n} in Maps</a><button id="geo-clear" type="button" class="small">Clear</button></div>`
-    : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and record each of its 4 corners. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. Needs location permission; the satellite background needs a connection, the rest works offline.</p>`}`;
+      <div class="actions" style="margin:10px 0 0"><a class="btn primary small" href="#/trial/${t.id}/location">Location Sheet…</a><button id="geo-copy" type="button" class="small">Copy Coordinates</button><a class="btn small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${first.lat},${first.lon}">Open in Maps</a><button id="geo-clear" type="button" class="small">Clear</button></div>`
+    : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and record each of its 4 corners, and the parking / gate. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. These fill in the Location Sheet. Needs location permission; the satellite background needs a connection, the rest works offline.</p>
+      <div class="actions" style="margin:10px 0 0"><a class="btn small" href="#/trial/${t.id}/location">Location Sheet…</a></div>`}`;
 }
 function wireGeoCard(t, again) {
   const w = document.getElementById('geo-walk'); if (!w) return;
   w.onclick = () => openTrialMap(t, again);
-  const mini = document.getElementById('geo-mini'), cs = geoPts(t);
-  if (mini && cs.length) { // the same map as the walk screen (satellite / street when online, plain when offline)
-    const st = db.settings.mapStyle || 'sat', sat = st !== 'none', v = fitView(cs, 320, 200, 0.7);
-    mini.innerHTML = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + `<text x="8" y="16" font-size="12" font-weight="700" fill="${sat ? '#fff' : '#5a6877'}" style="${sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : ''}">N ↑</text>`
+  const mini = document.getElementById('geo-mini'), cs = geoPts(t), pk = geoParking(t);
+  if (mini && (cs.length || pk)) { // the same map as the walk screen (satellite / street when online, plain when offline)
+    const st = db.settings.mapStyle || 'sat', sat = st !== 'none', v = fitView([...cs, ...(pk ? [pk] : [])], 320, 200, 0.7);
+    mini.innerHTML = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + (pk ? parkSvg(v, pk) : '') + `<text x="8" y="16" font-size="12" font-weight="700" fill="${sat ? '#fff' : '#5a6877'}" style="${sat ? 'paint-order:stroke;stroke:#000;stroke-width:3px;' : ''}">N ↑</text>`
       + (st === 'sat' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#fff" style="paint-order:stroke;stroke:#000;stroke-width:2px;">Imagery © Esri</text>' : st === 'map' ? '<text x="312" y="195" text-anchor="end" font-size="8" fill="#222" style="paint-order:stroke;stroke:#fff;stroke-width:2px;">© OpenStreetMap</text>' : '');
     mini.onclick = () => openTrialMap(t, again);
     mini.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openTrialMap(t, again); } };
@@ -2730,7 +2755,7 @@ function openTrialMap(t, after) {
 
   function draw() {
     const W = wrap.clientWidth, H = wrap.clientHeight; if (!W || !H) return;
-    const cs = geoPts(t), near = pos && (!cs.length || distM(pos, cs[0]) < 3000), must = [...cs, ...(near ? [pos] : [])];
+    const cs = geoPts(t), pk = geoParking(t), ref = cs[0] || pk, near = pos && (!ref || distM(pos, ref) < 3000), must = [...cs, ...(pk ? [pk] : []), ...(near ? [pos] : [])];
     msgEl.textContent = must.length || manual ? '' : (err || 'Waiting for a GPS position…');
     if (!must.length && !view) { svgT.innerHTML = ''; svgD.innerHTML = ''; return; }
     if (manual && view) { if (view.W !== W || view.H !== H) view = { ...view, W, H }; }
@@ -2740,7 +2765,7 @@ function openTrialMap(t, after) {
     }
     tilesUpdate(svgT, view, style);
     const sat = style !== 'none';
-    let s = outlineSvg(view, cs, !sat);
+    let s = outlineSvg(view, cs, !sat) + (pk ? parkSvg(view, pk) : '');
     if (trail.length > 1) s = `<polyline points="${trail.map(p => scr(view, p).map(x => x.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="${sat ? '#fff' : '#7a8a9a'}" stroke-width="2" stroke-dasharray="2 5" stroke-linecap="round"/>` + s;
     if (pos) {
       const [px, py] = scr(view, pos), mpp0 = worldM(view.lat) / view.k, ar = Math.max(6, (pos.acc || 0) / mpp0);
@@ -2770,29 +2795,34 @@ function openTrialMap(t, after) {
     const r = readiness(), el = q('#mp-ready'), b = q('#mp-mark');
     if (el) { el.textContent = r.txt; el.className = 'gpsready ' + r.s; }
     if (b) { b.classList.toggle('primary', r.s === 'ready'); b.disabled = !pos; }
+    const pb = q('#mp-park'); if (pb) pb.disabled = !pos;
     return r;
   }
   function panel() {
-    const cs = corners(), nx = nextCorner(), have = geoPts(t);
+    const cs = corners(), nx = nextCorner(), have = geoPts(t), lab = slotLabels(t), pk = geoParking(t);
     const sideTxt = have.length === 4 ? `<p class="small muted" style="margin:6px 0 0">Sides: ${[[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => fmtM(distM(have[i], have[j]))).join(' · ')} · Area ≈ ${Math.round(areaM2(have)).toLocaleString('en-GB')} m²</p>` : '';
     q('#mp-panel').innerHTML = `<div class="gpsready none" id="mp-ready"></div>
       ${nx >= 0 ? `<button type="button" class="mark" id="mp-mark" disabled>Record Corner ${nx + 1} Here</button>` : `<div class="pill ok" style="display:block;text-align:center;padding:.5rem">All 4 corners recorded</div>`}
-      <div class="actions">${have.length ? '<button type="button" class="small" id="mp-copy">Copy Coordinates</button><button type="button" class="small" id="mp-clear">Clear All</button>' : ''}<button type="button" class="small primary" id="mp-save">Done</button></div>
-      <div style="margin-top:6px">${[0, 1, 2, 3].map(i => { const c = cs[i]; return `<div class="cornrow"><span class="cn ${c ? '' : 'cn0'}">${i + 1}</span><span class="cc">${c ? `${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)}m</span>` : ''}` : '<span class="muted">Not recorded yet</span>'}</span>${c ? `<button type="button" data-re="${i}">Redo</button><button type="button" data-clr="${i}" aria-label="Clear corner ${i + 1}">✕</button>` : ''}</div>`; }).join('')}</div>
+      <div class="actions"><button type="button" class="small" id="mp-park">${pk ? 'Redo Parking / Gate Here' : 'Record Parking / Gate Here'}</button>${have.length || pk ? '<button type="button" class="small" id="mp-copy">Copy Coordinates</button><button type="button" class="small" id="mp-clear">Clear All</button>' : ''}<button type="button" class="small primary" id="mp-save">Done</button></div>
+      <div style="margin-top:6px">${[0, 1, 2, 3].map(i => { const c = cs[i]; return `<div class="cornrow"><span class="cn ${c ? '' : 'cn0'}">${lab[i]}</span><span class="cc">${c ? `${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` <span class="muted small">±${Math.round(c.acc)}m</span>` : ''}` : '<span class="muted">Not recorded yet</span>'}</span>${c ? `<button type="button" data-re="${i}">Redo</button><button type="button" data-clr="${i}" aria-label="Clear corner ${lab[i]}">✕</button>` : ''}</div>`; }).join('')}
+        ${pk ? `<div class="cornrow"><span class="cn" style="background:#e8590c">P</span><span class="cc">${fmtCoord(pk.lat)}, ${fmtCoord(pk.lon)} <span class="muted small">±${Math.round(pk.acc || 0)}m</span></span><button type="button" data-clr="P" aria-label="Clear the parking / gate point">✕</button></div>` : ''}</div>
       ${sideTxt}
+      ${have.length === 4 ? '<p class="small muted" style="margin:6px 0 0">Corners are named by where they sit on the map: LL Lower Left, UL Upper Left, UR Upper Right, LR Lower Right (north at the top).</p>' : ''}
       <p class="small muted" style="margin:6px 0 0">Phone GPS (WGS84), not survey grade: the ± value is the GPS's own accuracy estimate. Each corner is the average of the readings taken while you stood still.</p>`;
     showReady();
   }
   function setCorner(i) {
     if (!pos) { toast('Waiting for a GPS position…'); return; }
     const r = readiness();
-    if (r.s !== 'ready' && !confirm(`Not ready yet:\n${r.txt}\n\nRecord corner ${i + 1} anyway?`)) return;
+    const what = i === 'P' ? 'the parking / gate point' : `corner ${slotLabels(t)[i]}`;
+    if (r.s !== 'ready' && !confirm(`Not ready yet:\n${r.txt}\n\nRecord ${what} anyway?`)) return;
     const pick = win.length ? win : [pos], wsum = pick.reduce((s, f) => s + 1 / Math.max(1, f.acc) ** 2, 0); // average of the readings since you stood still, the better ones counting more
     const lat = pick.reduce((s, f) => s + f.lat / Math.max(1, f.acc) ** 2, 0) / wsum, lon = pick.reduce((s, f) => s + f.lon / Math.max(1, f.acc) ** 2, 0) / wsum;
     t.geo = t.geo || { corners: [null, null, null, null] }; while (t.geo.corners.length < 4) t.geo.corners.push(null);
-    t.geo.corners[i] = { lat, lon, acc: Math.min(...pick.map(f => f.acc)), ts: Date.now(), n: pick.length };
+    const pt = { lat, lon, acc: Math.min(...pick.map(f => f.acc)), ts: Date.now(), n: pick.length };
+    if (i === 'P') t.geo.parking = pt; else t.geo.corners[i] = pt;
     t.geo.ts = Date.now(); t.updated = Date.now(); save();
-    toast(`Corner ${i + 1} recorded`);
+    toast(i === 'P' ? 'Parking / gate recorded' : `Corner ${slotLabels(t)[i]} recorded`);
     if (!manual) view = null; panel(); draw();
   }
   function status() {
@@ -2803,8 +2833,9 @@ function openTrialMap(t, after) {
     const b = e.target.closest && e.target.closest('button'); if (!b) return;
     if (b.id === 'mp-mark') { const i = nextCorner(); if (i >= 0) setCorner(i); }
     else if (b.dataset.re !== undefined) setCorner(+b.dataset.re);
-    else if (b.dataset.clr !== undefined) { if (!confirm(`Clear corner ${+b.dataset.clr + 1}?`)) return; t.geo.corners[+b.dataset.clr] = null; if (!t.geo.corners.some(Boolean)) delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
-    else if (b.id === 'mp-clear') { if (!confirm('Clear all corner coordinates?')) return; delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
+    else if (b.id === 'mp-park') setCorner('P');
+    else if (b.dataset.clr !== undefined) { const P = b.dataset.clr === 'P'; if (!confirm(P ? 'Clear the parking / gate point?' : `Clear corner ${slotLabels(t)[+b.dataset.clr]}?`)) return; if (P) delete t.geo.parking; else t.geo.corners[+b.dataset.clr] = null; if (!t.geo.corners.some(Boolean) && !t.geo.parking) delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
+    else if (b.id === 'mp-clear') { if (!confirm('Clear all corner coordinates and the parking / gate point?')) return; delete t.geo; t.updated = Date.now(); save(); if (!manual) view = null; panel(); draw(); }
     else if (b.id === 'mp-copy') { const txt = `${t.trialId}\n${geoCopyText(t)}\n\n${GEO_NOTE}`; (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => toast('Coordinates copied'), () => prompt('Copy the coordinates:', txt)); }
     else if (b.id === 'mp-save' || b.id === 'mp-close') close();
     else if (b.id === 'mp-style') { const k = Object.keys(STYLES); style = k[(k.indexOf(style) + 1) % k.length]; db.settings.mapStyle = style; persistQuiet(); b.textContent = STYLES[style]; draw(); }
@@ -2847,6 +2878,223 @@ function openTrialMap(t, after) {
     if (after) after();
   }
   panel(); status(); draw();
+}
+
+/* ---------- Trial Location & Directions sheet (one A4 page, PDF) ---------- */
+const LOGO_JPG = { w: 640, h: 138, b64: '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' };
+function osGridRef(lat, lon) { // WGS84 (GPS) → Ordnance Survey grid reference, e.g. "SP 21927 72811"; '' outside Great Britain
+  const r = Math.PI / 180;
+  let a = 6378137, b = 6356752.314245, e2 = 1 - b * b / (a * a);
+  let φ = lat * r, λ = lon * r, s = Math.sin(φ), c = Math.cos(φ), ν = a / Math.sqrt(1 - e2 * s * s);
+  const x = ν * c * Math.cos(λ), y = ν * c * Math.sin(λ), z = ν * (1 - e2) * s;
+  const tx = -446.448, ty = 125.157, tz = -542.060, sc = 20.4894e-6, rx = -0.1502 / 3600 * r, ry = -0.2470 / 3600 * r, rz = -0.8421 / 3600 * r; // Helmert: WGS84 → OSGB36
+  const x2 = tx + x * (1 + sc) - y * rz + z * ry, y2 = ty + x * rz + y * (1 + sc) - z * rx, z2 = tz - x * ry + y * rx + z * (1 + sc);
+  a = 6377563.396; b = 6356256.909; e2 = 1 - b * b / (a * a); // Airy 1830
+  const p = Math.hypot(x2, y2); φ = Math.atan2(z2, p * (1 - e2));
+  for (let i = 0; i < 10; i++) { const sφ = Math.sin(φ); ν = a / Math.sqrt(1 - e2 * sφ * sφ); φ = Math.atan2(z2 + e2 * ν * sφ, p); }
+  λ = Math.atan2(y2, x2);
+  const F0 = 0.9996012717, φ0 = 49 * r, λ0 = -2 * r, N0 = -100000, E0 = 400000, n = (a - b) / (a + b);
+  const sφ = Math.sin(φ), cφ = Math.cos(φ), tφ = Math.tan(φ);
+  ν = a * F0 / Math.sqrt(1 - e2 * sφ * sφ); const ρ = a * F0 * (1 - e2) / Math.pow(1 - e2 * sφ * sφ, 1.5), η2 = ν / ρ - 1;
+  const M = b * F0 * ((1 + n + 5 / 4 * n * n + 5 / 4 * n ** 3) * (φ - φ0) - (3 * n + 3 * n * n + 21 / 8 * n ** 3) * Math.sin(φ - φ0) * Math.cos(φ + φ0)
+    + (15 / 8 * n * n + 15 / 8 * n ** 3) * Math.sin(2 * (φ - φ0)) * Math.cos(2 * (φ + φ0)) - 35 / 24 * n ** 3 * Math.sin(3 * (φ - φ0)) * Math.cos(3 * (φ + φ0)));
+  const I = M + N0, II = ν / 2 * sφ * cφ, III = ν / 24 * sφ * cφ ** 3 * (5 - tφ ** 2 + 9 * η2), IIIA = ν / 720 * sφ * cφ ** 5 * (61 - 58 * tφ ** 2 + tφ ** 4);
+  const IV = ν * cφ, V = ν / 6 * cφ ** 3 * (ν / ρ - tφ ** 2), VI = ν / 120 * cφ ** 5 * (5 - 18 * tφ ** 2 + tφ ** 4 + 14 * η2 - 58 * tφ ** 2 * η2);
+  const dλ = λ - λ0, N = I + II * dλ ** 2 + III * dλ ** 4 + IIIA * dλ ** 6, E = E0 + IV * dλ + V * dλ ** 3 + VI * dλ ** 5;
+  const e100 = Math.floor(E / 100000), n100 = Math.floor(N / 100000);
+  if (e100 < 0 || e100 > 6 || n100 < 0 || n100 > 12) return '';
+  let l1 = (19 - n100) - (19 - n100) % 5 + Math.floor((e100 + 10) / 5), l2 = (19 - n100) * 5 % 25 + e100 % 5;
+  if (l1 > 7) l1++; if (l2 > 7) l2++;
+  const pad = v => String(Math.floor(v % 100000)).padStart(5, '0');
+  return `${String.fromCharCode(l1 + 65, l2 + 65)} ${pad(E)} ${pad(N)}`;
+}
+const LOC_TEXT = [['protocol', 'Protocol No'], ['locationName', 'Location Name'], ['cooperator', 'Co-operator']];
+const LOC_ADDR = [['postcode', 'Postal / Zip Code'], ['city', 'City'], ['county', 'County'], ['country', 'Country']];
+const geoLL = t => { const cs = geoPts(t); return cs.find(c => c.lab === 'LL') || cs[0] || null; };
+function viewLocation(t) {
+  const L = t.loc || {}, cs = geoPts(t), pk = geoParking(t), ll = geoLL(t), os = ll ? osGridRef(ll.lat, ll.lon) : '';
+  const fld = ([k, label], ph) => `<label class="field"><span>${label}</span><input data-k="${k}" value="${esc(L[k] || '')}" placeholder="${ph || ''}" autocomplete="off"></label>`;
+  app.innerHTML = `
+  <header class="top"><a class="back" href="#/trial/${t.id}">← ${esc(t.trialId)}</a><h1>Location Sheet</h1><a class="brand sm" href="#/" aria-label="FART – back to the home page"><b>FART</b><span>Field Assessment Recording Tool</span></a></header>
+  <main>
+    <p class="small muted">Fill this in once for the trial – it saves as you type. <b>Export</b> makes the one-page "Trial Location &amp; Directions" PDF with the coordinates and satellite maps.</p>
+    ${cs.length < 4 ? `<section class="card warnbox"><b>${cs.length ? `Only ${cs.length} of 4 corners recorded.` : 'No trial corners recorded yet.'}</b> Use <b>Walk the Trial</b> on the trial page to record the 4 corners${pk ? '' : ' and the parking / gate'} – they give the coordinates, grid reference and maps.</section>` : ''}
+    <section class="card"><h2>Trial</h2><div class="grid2">
+      <label class="field"><span>Trial Number</span><input value="${esc(t.trialId)}" disabled></label>
+      ${fld(LOC_TEXT[0], 'e.g. EA26D2C026H')}${fld(LOC_TEXT[1], 'e.g. nearest town / farm')}${fld(LOC_TEXT[2])}
+    </div></section>
+    <section class="card"><div class="arow"><h2 style="margin:0">Address</h2><button type="button" class="small" id="loc-look">Look Up from GPS</button></div>
+      <p class="small muted" style="margin:6px 0 8px">Fills in the postcode, city, county and country from the ${pk ? 'parking / gate point' : 'trial location'} (UK only, needs internet). Check it and correct anything that is wrong.</p>
+      <div class="grid2">${LOC_ADDR.map(f => fld(f)).join('')}</div></section>
+    <section class="card"><h2>Grid Reference &amp; What3Words</h2>
+      <div class="grid2">
+        <label class="field"><span>OS Grid Ref <span class="muted" style="font-weight:400">(worked out from the LL corner)</span></span><input value="${esc(os || (ll ? 'Outside Great Britain' : 'Record the corners first'))}" disabled></label>
+        <span></span>
+        <label class="field"><span>What3Words Trial</span><span style="display:flex;gap:6px"><input data-k="w3wTrial" value="${esc(L.w3wTrial || '')}" placeholder="word.word.word" autocomplete="off" autocapitalize="off"><button type="button" class="small" data-w3w="trial" ${cs.length ? '' : 'disabled'}>Find</button></span></label>
+        <label class="field"><span>What3Words Parking</span><span style="display:flex;gap:6px"><input data-k="w3wParking" value="${esc(L.w3wParking || '')}" placeholder="word.word.word" autocomplete="off" autocapitalize="off"><button type="button" class="small" data-w3w="park" ${pk ? '' : 'disabled'}>Find</button></span></label>
+      </div>
+      <p class="small muted" style="margin:0"><b>Find</b> copies the coordinates and opens what3words, so you can read off the three words and type them in.</p></section>
+    <section class="card"><h2>Directions</h2>
+      <textarea data-k="directions" rows="5" placeholder="e.g. Going up Birmingham Rd (A4141), turn into Manor Ln, then right into School Ln…">${esc(L.directions || '')}</textarea></section>
+    <div class="actions"><button class="primary" id="loc-pdf" type="button">Export Location Sheet (PDF)</button></div>
+    <p class="small muted" id="loc-msg"></p>
+  </main>`;
+  app.querySelectorAll('[data-k]').forEach(inp => inp.oninput = () => {
+    let v = inp.value; if (inp.dataset.k.startsWith('w3w')) v = v.replace(/^\/+/, '');
+    t.loc = t.loc || {}; if (v.trim()) t.loc[inp.dataset.k] = v.trim(); else delete t.loc[inp.dataset.k];
+    t.updated = Date.now(); save();
+  });
+  app.querySelectorAll('[data-w3w]').forEach(b => b.onclick = () => {
+    const p = b.dataset.w3w === 'park' ? pk : ll; if (!p) return;
+    const ll6 = `${fmtCoord(p.lat)},${fmtCoord(p.lon)}`;
+    try { navigator.clipboard && navigator.clipboard.writeText(ll6); } catch (e) {}
+    window.open(`https://what3words.com/${ll6}`, '_blank', 'noopener');
+  });
+  document.getElementById('loc-look').onclick = async () => {
+    const p = pk || ll, btn = document.getElementById('loc-look');
+    if (!p) { toast('Record the trial corners or the parking / gate first'); return; }
+    btn.disabled = true; btn.textContent = 'Looking up…';
+    try {
+      const r = await fetch(`https://api.postcodes.io/postcodes?lon=${p.lon}&lat=${p.lat}&radius=2000&limit=1`), j = await r.json(), x = j && j.result && j.result[0];
+      if (!x) { alert('No UK postcode found within 2 km of this point. Please type the address in.'); return; }
+      const got = { postcode: x.postcode || '', city: x.admin_district || '', county: x.admin_county || '', country: 'United Kingdom' };
+      const cur = t.loc || {}, diff = Object.keys(got).filter(k => got[k] && cur[k] && cur[k] !== got[k]);
+      if (diff.length && !confirm(`Replace what is already typed?\n\n${diff.map(k => `${k}: ${cur[k]} → ${got[k]}`).join('\n')}`)) return;
+      t.loc = { ...cur }; Object.keys(got).forEach(k => { if (got[k]) t.loc[k] = got[k]; });
+      t.updated = Date.now(); save(); viewLocation(t); toast(`Found ${got.postcode}${got.county ? '' : ' – please type the county'}`);
+    } catch (e) { alert('Could not look up the address – check the internet connection, or type it in.'); }
+    finally { const b2 = document.getElementById('loc-look'); if (b2) { b2.disabled = false; b2.textContent = 'Look Up from GPS'; } }
+  };
+  document.getElementById('loc-pdf').onclick = async () => {
+    const btn = document.getElementById('loc-pdf'), msg = document.getElementById('loc-msg');
+    btn.disabled = true; btn.textContent = 'Making the PDF (loading the maps)…';
+    try {
+      const r = await locationPdf(t);
+      downloadMany([{ blob: r.blob, name: r.name }]);
+      if (msg) msg.textContent = r.mapsOk ? '' : 'The satellite images could not be loaded (no internet?), so the maps show only the outline. Export again with a connection to include them.';
+    } catch (e) { alert('Could not make the location sheet: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = 'Export Location Sheet (PDF)'; }
+  };
+}
+/* satellite map drawn onto a canvas (so it can go into the PDF) */
+const loadImg = (url, ms) => new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; const tm = setTimeout(() => res(null), ms || 12000); im.onload = () => { clearTimeout(tm); res(im); }; im.onerror = () => { clearTimeout(tm); res(null); }; im.src = url; });
+async function mapJpeg(v, W, H, overlay) {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#dfe7ef'; ctx.fillRect(0, 0, W, H);
+  let z = clamp(Math.ceil(Math.log2(v.k / 256)), 0, 19), n, xa, xb, ya, yb;
+  for (;;) { n = 2 ** z; xa = Math.floor((v.cx - W / 2 / v.k) * n); xb = Math.floor((v.cx + W / 2 / v.k) * n); ya = Math.max(0, Math.floor((v.cy - H / 2 / v.k) * n)); yb = Math.min(n - 1, Math.floor((v.cy + H / 2 / v.k) * n)); if ((xb - xa + 1) * (yb - ya + 1) <= 90 || z === 0) break; z--; }
+  const sz = v.k / n, jobs = [];
+  for (let ty = ya; ty <= yb; ty++) for (let tx = xa; tx <= xb; tx++) {
+    const wx = ((tx % n) + n) % n, x = W / 2 + (tx / n - v.cx) * v.k, y = H / 2 + (ty / n - v.cy) * v.k;
+    jobs.push(loadImg(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${wx}`).then(im => { if (im) { ctx.drawImage(im, x, y, sz + 0.6, sz + 0.6); return 1; } return 0; }));
+  }
+  const ok = (await Promise.all(jobs)).reduce((a, b) => a + b, 0);
+  overlay(ctx);
+  ctx.font = `${Math.round(H / 40)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.fillStyle = '#fff';
+  if (ok) { ctx.strokeText('Imagery © Esri', W - 8, H - 8); ctx.fillText('Imagery © Esri', W - 8, H - 8); }
+  let data; try { data = cv.toDataURL('image/jpeg', 0.85); } catch (e) { data = null; }
+  return { data, ok: ok > 0, w: W, h: H };
+}
+function canvasArrow(ctx, x1, y1, x2, y2, w) { // a fat arrow like the hand-made sheets
+  const L = Math.hypot(x2 - x1, y2 - y1); if (L < w * 4) return;
+  const hw = w * 2.3, hl = w * 2.4;
+  ctx.save(); ctx.translate(x1, y1); ctx.rotate(Math.atan2(y2 - y1, x2 - x1));
+  ctx.beginPath(); ctx.moveTo(0, -w / 2); ctx.lineTo(L - hl, -w / 2); ctx.lineTo(L - hl, -hw / 2); ctx.lineTo(L, 0); ctx.lineTo(L - hl, hw / 2); ctx.lineTo(L - hl, w / 2); ctx.lineTo(0, w / 2); ctx.closePath();
+  ctx.fillStyle = '#4472c4'; ctx.fill(); ctx.lineWidth = Math.max(2, w / 8); ctx.strokeStyle = '#2f528f'; ctx.stroke(); ctx.restore();
+}
+function canvasOutline(ctx, P, labs, scale) {
+  if (P.length >= 2) { ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); if (P.length >= 3) ctx.closePath();
+    ctx.lineJoin = 'round'; ctx.lineWidth = 7 * scale; ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.stroke(); ctx.lineWidth = 4 * scale; ctx.strokeStyle = '#ffd400'; ctx.stroke(); }
+  if (labs) P.forEach(([x, y], i) => { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 * scale; ctx.strokeStyle = '#000'; ctx.stroke();
+    ctx.fillStyle = '#000'; ctx.font = `bold ${Math.round(12 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(labs[i], x, y + 0.5); ctx.textBaseline = 'alphabetic'; });
+}
+function canvasP(ctx, x, y, scale) { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#e8590c'; ctx.fill(); ctx.lineWidth = 3 * scale; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(16 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('P', x, y + 1); ctx.textBaseline = 'alphabetic'; }
+async function locationPdf(t) {
+  const L = t.loc || {}, cs = geoPts(t), pk = geoParking(t), ll = geoLL(t), all = [...cs, ...(pk ? [pk] : [])];
+  const PW = 595.28, PH = 841.89, M = 28, R = PW - M;
+  // the two maps: a wide overview (about 2 km across) and a close-up of the trial and its gate
+  const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 216 }, CU = { x: M + 4, y: 440, w: R - M - 8, h: 242 };
+  let ov = null, cu = null;
+  if (all.length) {
+    const cen = cs.length ? { lat: cs.reduce((s, c) => s + c.lat, 0) / cs.length, lon: cs.reduce((s, c) => s + c.lon, 0) / cs.length } : pk;
+    const oW = Math.round(OV.w * 2), oH = Math.round(OV.h * 2), oV = { cx: mercX(cen.lon), cy: mercY(cen.lat), k: oW / (2200 / worldM(cen.lat)), W: oW, H: oH, lat: cen.lat };
+    const cW = Math.round(CU.w * 2), cH = Math.round(CU.h * 2), cV = fitView(all, cW, cH, 1.1);
+    [ov, cu] = await Promise.all([
+      mapJpeg(oV, oW, oH, ctx => { // overview: outline (tiny at this scale) with a red pin, and the gate
+        canvasOutline(ctx, cs.map(c => scr(oV, c)), null, 1);
+        if (pk) { const [x, y] = scr(oV, pk); canvasP(ctx, x, y, 1); }
+        const [x, y] = scr(oV, cen); ctx.beginPath(); ctx.arc(x, y - 22, 12, Math.PI * 0.85, Math.PI * 0.15); ctx.lineTo(x, y); ctx.closePath(); ctx.fillStyle = '#d93025'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(x, y - 22, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+      }),
+      mapJpeg(cV, cW, cH, ctx => { // close-up: outline, corner names, gate, and arrows to them
+        const P = cs.map(c => scr(cV, c)); canvasOutline(ctx, P, cs.map(c => c.lab), 1.4);
+        if (pk) { const [x, y] = scr(cV, pk); canvasP(ctx, x, y, 1.4); }
+        if (cs.length) { const [x, y] = scr(cV, cen); canvasArrow(ctx, cW * 0.12, cH * 0.04, x, y, 30); }
+        if (pk) { const [x, y] = scr(cV, pk); const dx = x > cW * 0.5 ? 0.88 : 0.55; canvasArrow(ctx, cW * dx, cH * 0.04, x + (cW * dx < x ? -1 : 1) * 4, y - 22, 30); }
+      }),
+    ]);
+  }
+  // ---- PDF ----
+  const ops = [], f1 = n => (Math.round(n * 100) / 100).toString(), Y = y => f1(PH - y);
+  const text = (x, y, str, size, bold) => ops.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${f1(x)} ${Y(y)} Td (${pdfStr(str)}) Tj ET`);
+  const est = (str, size, bold) => String(str).length * size * (bold ? 0.56 : 0.5);
+  const fit = (str, w, size, bold) => { str = String(str ?? ''); const max = Math.max(1, Math.floor(w / (size * (bold ? 0.56 : 0.5)))); return str.length > max ? str.slice(0, Math.max(1, max - 2)) + '..' : str; };
+  const box = (x, y, w, h, lw) => ops.push(`0 G ${lw || 0.8} w ${f1(x)} ${Y(y + h)} ${f1(w)} ${f1(h)} re S`);
+  const image = (name, x, y, w, h) => ops.push(`q ${f1(w)} 0 0 ${f1(h)} ${f1(x)} ${Y(y + h)} cm /${name} Do Q`);
+  const wrap = (str, w, size) => { const cap = Math.max(10, Math.floor(w / (size * 0.5))), out = []; String(str || '').split(/\r?\n/).forEach(par => { let cur = ''; par.split(/\s+/).filter(Boolean).forEach(wd => { if ((cur + ' ' + wd).trim().length <= cap) cur = (cur + ' ' + wd).trim(); else { if (cur) out.push(cur); cur = wd; } }); out.push(cur); }); return out; };
+  // title and logo
+  text(M, 52, 'Trial Location & Directions', 22, true);
+  const lw = 150, lh = lw * LOGO_JPG.h / LOGO_JPG.w; image('Logo', R - lw, 24, lw, lh);
+  // details table
+  const os = ll ? osGridRef(ll.lat, ll.lon) : '';
+  const left = [['Protocol No:', L.protocol], ['Location Name:', L.locationName], ['City:', L.city], ['County:', L.county], ['Country:', L.country], ['Co-operator:', L.cooperator]];
+  const right = [['Trial Number:', t.trialId], ['Postal/Zip Code:', L.postcode], ['OS grid Ref:', os], ['What3Words Trial:', L.w3wTrial], ['What3Words Parking:', L.w3wParking]];
+  const RH = 19, T0 = 68;
+  left.forEach(([k, v], i) => { const y = T0 + i * RH; text(M, y + 13.5, k, 10, true); box(M + 98, y, 152, RH); text(M + 102, y + 13.5, fit(v || '', 146, 10), 10); });
+  right.forEach(([k, v], i) => { const y = T0 + i * RH, x = M + 262; text(x, y + 13.5, k, 10, true); box(x + 112, y, R - x - 112, RH); text(x + 116, y + 13.5, fit(v || '', R - x - 120, 10), 10); });
+  // box 1: coordinates + overview map
+  const B1 = { y: 188, h: 228 }; box(M, B1.y, R - M, B1.h);
+  let yy = B1.y + 16;
+  const cByLab = l => cs.find(c => c.lab === l), cTxt = c => c ? `${fmtCoord(c.lat)} , ${fmtCoord(c.lon)}` : '–';
+  if (cs.length === 4) {
+    text(M + 8, yy, 'LL Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, cTxt(cByLab('LL')), 14); yy += 42;
+    [['UL', 'Upper Left'], ['UR', 'Upper Right'], ['LR', 'Lower Right']].forEach(([l, nm]) => { text(M + 8, yy, nm, 10, true); text(M + 8, yy + 14, cTxt(cByLab(l)), 10); yy += 33; });
+  } else if (cs.length) {
+    text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); yy += 18;
+    cs.forEach(c => { text(M + 8, yy, `Corner ${c.lab}: ${cTxt(c)}`, 10); yy += 16; });
+    text(M + 8, yy, `Only ${cs.length} of 4 corners recorded`, 8); yy += 16;
+  } else { text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, 'Not recorded – walk the trial in FART', 10); yy += 40; }
+  if (pk) { text(M + 8, yy, 'Parking / Gate', 10, true); text(M + 8, yy + 14, cTxt(pk), 10); yy += 33; }
+  const r = geoAccRange(all);
+  wrap(`Phone GPS (WGS84)${r ? ', ' + r : ''}, not survey grade. The ± value is the GPS's own accuracy estimate when each point was recorded.`, 235, 7).forEach(l => { if (yy < B1.y + B1.h - 6) { text(M + 8, yy, l, 7); yy += 9; } });
+  const imgs = [];
+  const place = (img, bx, name) => { if (!img || !img.data) return; image(name, bx.x, bx.y, bx.w, bx.h); imgs.push({ name, img }); };
+  place(ov, OV, 'Ov'); if (!ov) text(OV.x + 10, OV.y + OV.h / 2, 'No map – walk the trial in FART first', 9);
+  // labels above the close-up
+  text(M + 6, CU.y - 10, t.trialId, 11); if (pk) text(R - 6 - est('Parking/Gate', 11), CU.y - 10, 'Parking/Gate', 11);
+  box(M, CU.y - 4, R - M, CU.h + 8); place(cu, CU, 'Cu'); if (!cu) text(CU.x + 10, CU.y + CU.h / 2, 'No map – walk the trial in FART first', 9);
+  // directions
+  const B3 = { y: CU.y + CU.h + 14, h: PH - M - (CU.y + CU.h + 14) }; box(M, B3.y, R - M, B3.h);
+  const dl = wrap(L.directions || '', R - M - 16, 10), maxL = Math.floor((B3.h - 10) / 13);
+  dl.slice(0, maxL).forEach((l, i) => text(M + 8, B3.y + 16 + i * 13, l, 10));
+  // ---- assemble ----
+  const content = ops.join('\n');
+  let out = '%PDF-1.4\n'; const offs = [];
+  const add = (n, body) => { offs[n] = out.length; out += `${n} 0 obj\n${body}\nendobj\n`; };
+  const jpgObj = (w, h, bin) => `<< /Type /XObject /Subtype /Image /Width ${w} /Height ${h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bin.length} >>\nstream\n${bin}\nendstream`;
+  const xo = [{ name: 'Logo', w: LOGO_JPG.w, h: LOGO_JPG.h, bin: atob(LOGO_JPG.b64) }, ...imgs.map(({ name, img }) => ({ name, w: img.w, h: img.h, bin: atob(img.data.split(',')[1]) }))];
+  add(1, '<< /Type /Catalog /Pages 2 0 R >>');
+  add(2, '<< /Type /Pages /Kids [5 0 R] /Count 1 >>');
+  add(3, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  add(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
+  add(5, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PW} ${PH}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << ${xo.map((x, i) => `/${x.name} ${7 + i} 0 R`).join(' ')} >> >> /Contents 6 0 R >>`);
+  add(6, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  xo.forEach((x, i) => add(7 + i, jpgObj(x.w, x.h, x.bin)));
+  const total = 6 + xo.length, xref = out.length;
+  out += `xref\n0 ${total + 1}\n0000000000 65535 f \n` + offs.slice(1).map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
+  out += `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return { blob: new Blob([Uint8Array.from(out, c => c.charCodeAt(0))], { type: 'application/pdf' }), name: `${t.trialId.replace(/[^\w.-]+/g, '_')}_Trial_Location.pdf`, mapsOk: !!(ov && ov.ok && cu && cu.ok) };
 }
 
 /* ---------- export chooser ---------- */
