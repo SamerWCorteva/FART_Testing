@@ -2753,7 +2753,7 @@ function geoCardHtml(t) {
       <p class="small muted" style="margin:4px 0 0">Tap the map to open it full screen, where you can pinch to zoom.</p>
       <div style="margin-top:8px">${cornerRowsHtml(t)}</div>
       ${info ? `<p class="small muted" style="margin:6px 0 0">${esc(info)}</p>` : ''}
-      <p class="small muted" style="margin:6px 0 0"><b>Accuracy:</b> ${esc(GEO_NOTE)}</p>
+      <p class="small muted" style="margin:6px 0 0"><b>Accuracy:</b> ${(() => { const L0 = n === 4 ? cs.find(c => c.lab === 'LL') : null; return L0 && L0.acc ? `<b style="color:var(--ink)">LL corner ±${Math.round(L0.acc)} m.</b> ` : ''; })()}${esc(GEO_NOTE)}</p>
       <div class="actions" style="margin:10px 0 0"><a class="btn primary small" href="#/trial/${t.id}/location">Location Sheet…</a><button id="geo-copy" type="button" class="small">Copy Coordinates</button><button id="geo-nav" type="button" class="small">${pk ? 'Open Parking / Gate in Maps' : n === 4 ? 'Open LL Corner in Maps' : 'Open in Maps'}</button><button id="geo-clear" type="button" class="small">Clear</button></div>`
     : `<p class="small muted" style="margin:6px 0 0">Walk around the trial and record each of its 4 corners, and the parking / gate. You will see where you are on a map, the outline of the trial, and the coordinates of every corner. These fill in the Location Sheet. Needs location permission; the satellite background needs a connection, the rest works offline.</p>
       <div class="actions" style="margin:10px 0 0"><a class="btn small" href="#/trial/${t.id}/location">Location Sheet…</a></div>`}</details>`;
@@ -3156,7 +3156,7 @@ function canvasNorth(ctx, x, y, k) { // same arrow as on the screen maps
 function canvasP(ctx, x, y, scale) { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#e8590c'; ctx.fill(); ctx.lineWidth = 3 * scale; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(16 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('P', x, y + 1); ctx.textBaseline = 'alphabetic'; }
 /* the two maps on the sheet: the same pixels in the preview (where they can be dragged and zoomed) and in the PDF */
-const LOC_MAP = { ov: { W: 567, H: 388 }, cu: { W: 1063, H: 400 } }; // twice the size they are printed at
+const LOC_MAP = { ov: { W: 567, H: 388 }, cu: { W: 1063, H: 500 } }; // twice the size they are printed at
 const invMercY = y => Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI;
 const viewToStore = v => { const lat = invMercY(v.cy); return { lat, lon: v.cx * 360 - 180, m: v.W / v.k * worldM(lat) }; }; // centre + metres across, so it doesn't depend on screen size
 const viewFromStore = (st, W, H) => ({ cx: mercX(st.lon), cy: mercY(st.lat), k: W / (st.m / worldM(st.lat)), W, H, lat: st.lat });
@@ -3317,7 +3317,7 @@ async function locationPdf(t) {
   const L = t.loc || {}, cs = geoPts(t), pk = geoParking(t), ll = geoLL(t), all = [...cs, ...(pk ? [pk] : [])];
   const PW = 595.28, PH = 841.89, M = 28, R = PW - M;
   // the two maps: a wide overview and a close-up of the trial and its gate, framed as set in the preview
-  const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 194 }, CU = { x: M + 4, y: 408, w: R - M - 8, h: 200 };
+  const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 194 }, CU = { x: M + 4, y: 408, w: R - M - 8, h: 250 };
   let ov = null, cu = null;
   if (all.length) {
     const oV = locView(t, 'ov'), cV = locView(t, 'cu');
@@ -3349,16 +3349,18 @@ async function locationPdf(t) {
   let yy = B1.y + 16;
   const cByLab = l => cs.find(c => c.lab === l), cTxt = c => c ? `${fmtCoord(c.lat)} , ${fmtCoord(c.lon)}` : '–';
   if (cs.length === 4) {
-    text(M + 8, yy, 'LL Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, cTxt(cByLab('LL')), 14); yy += 40;
-    [['UL', 'Upper Left'], ['UR', 'Upper Right'], ['LR', 'Lower Right']].forEach(([l, nm]) => { text(M + 8, yy, nm, 10, true); text(M + 8, yy + 13, cTxt(cByLab(l)), 10); yy += 30; });
+    text(M + 8, yy, 'LL Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, cTxt(cByLab('LL')), 14);
+    if (cByLab('LL').acc) { text(M + 8, yy + 32, `LL accuracy: ±${Math.round(cByLab('LL').acc)} m`, 9.5, true); yy += 51; } else yy += 40;
+    [['UL', 'Upper Left'], ['UR', 'Upper Right'], ['LR', 'Lower Right']].forEach(([l, nm]) => { text(M + 8, yy, nm, 10, true); text(M + 8, yy + 13, cTxt(cByLab(l)), 10); yy += 29; });
   } else if (cs.length) {
     text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); yy += 18;
     cs.forEach(c => { text(M + 8, yy, `Corner ${c.lab}: ${cTxt(c)}`, 10); yy += 16; });
     text(M + 8, yy, `Only ${cs.length} of 4 corners recorded`, 8); yy += 16;
   } else { text(M + 8, yy, 'Latitude (N): Longitude (E/W):', 10, true); text(M + 8, yy + 18, 'Not recorded – walk the trial in FART', 10); yy += 40; }
-  if (pk) { text(M + 8, yy, 'Parking / Gate', 10, true); text(M + 8, yy + 13, cTxt(pk), 10); yy += 30; }
+  if (pk) { text(M + 8, yy, 'Parking / Gate', 10, true); text(M + 8, yy + 13, cTxt(pk), 10); yy += 29; }
   const r = geoAccRange(all);
-  wrap(`Phone GPS (WGS84)${r ? ', ' + r : ''}. ± = GPS accuracy when each point was recorded.`, 235, 7).forEach(l => { if (yy < B1.y + B1.h - 6) { text(M + 8, yy, l, 7); yy += 9; } });
+  const llc = cs.length === 4 ? cByLab('LL') : null, others = geoAccRange(all.filter(p => p !== llc));
+  wrap(`Phone GPS (WGS84). ± = GPS accuracy when the point was recorded${llc && llc.acc ? `; LL ±${Math.round(llc.acc)} m` : ''}${others ? `, other points ${others}` : ''}.`, 235, 7).forEach(l => { if (yy < B1.y + B1.h - 6) { text(M + 8, yy, l, 7); yy += 9; } });
   const imgs = [];
   const place = (img, bx, name) => { if (!img || !img.data) return; image(name, bx.x, bx.y, bx.w, bx.h); imgs.push({ name, img }); names(img, bx); };
   const names = (img, bx) => { // map names as real text (white with a dark edge), kept inside the map
