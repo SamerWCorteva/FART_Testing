@@ -236,6 +236,8 @@ body.locked { overflow:hidden; }
 .cornrow button { min-height:30px; padding:.05rem .5rem; font-size:.78rem; }
 .mappanel .actions { margin:8px 0 0; gap:8px; }
 .mappanel .actions button { min-height:38px; }
+.locmap { position:relative; width:100%; margin:6px 0 10px; background:#dfe7ef; border:1px solid var(--line); border-radius:10px; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; cursor:grab; }
+.locmap svg, .locmap canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
 .minimap { width:100%; max-width:440px; height:auto; display:block; border:1px solid var(--line); border-radius:10px; background:#eef3f8; }
 .gpsready { border-radius:10px; padding:.5rem .7rem; font-weight:700; text-align:center; margin-bottom:8px; font-size:.95rem; line-height:1.3; }
 .gpsready.none { background:var(--line); color:var(--muted); }
@@ -736,6 +738,12 @@ const applies = (t, ty, trt, a) => (!a || inScope(t, a, trt)) && (!ty.untreatedO
 // growth stage (+ size for weeds) is asked for weeds and insect pests, not for diseases
 const isHeight = ty => /height/i.test(ty.name) && !ty.target;
 const isPhyto = ty => !!ty.phyto || /phyto/i.test(ty.name);
+const stageOf = (a, si) => si ? (((a.setBBCH || {})[si]) || {}) : { b: a.cropBBCH, min: a.cropBBCHMin, max: a.cropBBCHMax }; // crop growth stage of one crop / variety (si = its number)
+const cropSetName = (t, i) => setName(t, i) || `Crop ${i + 1}`;
+function stageText(t, a) { // e.g. "32 (31–33)", or "Wheat 32 (31–33) · Barley 25" when the trial has several crops / varieties
+  const one = st => st.b ? `${st.b}${st.min && st.max ? ` (${st.min}–${st.max})` : st.min ? ` (min ${st.min})` : st.max ? ` (max ${st.max})` : ''}` : '–';
+  return multiSet(t) ? t.sets.map((_, i) => `${cropSetName(t, i)} ${one(stageOf(a, i))}`).join(' · ') : (a.cropBBCH ? one(stageOf(a, 0)) : '');
+}
 const cropParts = t => { const m = /^(.*?)\s*\(([A-Z0-9]+)\)\s*$/.exec(t.crop || ''); return m ? { name: m[1], code: m[2] } : { name: t.crop || '', code: '' }; };
 const needsStage = ty => !!ty.target && (ty.needStage !== undefined ? ty.needStage : ty.kind === 'weed');
 const subsOf = ty => Math.max(1, Math.min(50, parseInt(ty.subs, 10) || 1));
@@ -1440,7 +1448,7 @@ function viewTrial(t) {
       return `<section class="card visit ${status[2]}">
         <div class="vhead">
           <div><div class="vdate">${esc(dmy(a.date))}</div>
-            <div class="small muted">${[a.assessor, a.cropBBCH ? `BBCH ${a.cropBBCH}${(a.cropBBCHMin || a.cropBBCHMax) ? ` (${a.cropBBCHMin || '–'}–${a.cropBBCHMax || '–'})` : ''}` : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
+            <div class="small muted">${[a.assessor, stageText(t, a) ? `BBCH ${stageText(t, a)}` : ''].filter(Boolean).map(esc).join(' · ')}</div></div>
           <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center"><span class="pill ${status[1]}">${status[0]}</span><button class="ibtn" data-cmt="${a.id}" type="button" title="Trial comment" aria-label="Trial comment for this date">${ICON.comment}${a.comment ? '<i class="dotmark"></i>' : ''}</button>${canLock ? `<button class="ibtn" data-${a.locked ? 'unlock' : 'lock'}="${a.id}" title="${a.locked ? 'Locked – tap to unlock' : 'Lock this date'}" aria-label="${a.locked ? 'Unlock this date' : 'Lock this date'}" type="button">${a.locked ? ICON.lock : ICON.unlock}</button>` : ''}</span>
         </div>
         ${(appLetters(t).length || unsaved) ? `<div class="pills" style="margin:0 0 .5rem">${appLetters(t).length ? `<span class="pill">${esc(scopeText(t, a))}</span>` : ''}${unsaved ? '<span class="pill warn">Unsaved Changes</span>' : ''}</div>` : ''}
@@ -1546,11 +1554,18 @@ function viewAssessForm(t, a, startStep) {
           <label class="field"><span>Assessor</span><input id="a-who" value="${esc(d.assessor)}" placeholder="Initials or name" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase"></label>
         </div>
         <h3>Crop Growth Stage (BBCH)</h3>
+        ${multiSet(t) ? `<p class="small muted" style="margin:-4px 0 6px">This trial has ${t.sets.length} crops / varieties – enter the stage of each.</p><h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, 0))}</h3>` : ''}
         <div class="grid3">
           <label class="field"><span>Majority *</span><input id="a-bbch" inputmode="numeric" value="${esc(d.cropBBCH || '')}" placeholder="e.g. 32" autocomplete="off"></label>
           <label class="field"><span>Minimum</span><input id="a-bbch-min" inputmode="numeric" value="${esc(d.cropBBCHMin || '')}" autocomplete="off"></label>
           <label class="field"><span>Maximum</span><input id="a-bbch-max" inputmode="numeric" value="${esc(d.cropBBCHMax || '')}" autocomplete="off"></label>
         </div>
+        ${multiSet(t) ? t.sets.slice(1).map((_, j) => { const i = j + 1, st = stageOf(d, i); return `<h3 class="h3s" style="margin:6px 0 4px">${esc(cropSetName(t, i))}</h3>
+        <div class="grid3">
+          <label class="field"><span>Majority *</span><input data-sb="${i}" data-sf="b" inputmode="numeric" value="${esc(st.b || '')}" placeholder="e.g. 32" autocomplete="off"></label>
+          <label class="field"><span>Minimum</span><input data-sb="${i}" data-sf="min" inputmode="numeric" value="${esc(st.min || '')}" autocomplete="off"></label>
+          <label class="field"><span>Maximum</span><input data-sb="${i}" data-sf="max" inputmode="numeric" value="${esc(st.max || '')}" autocomplete="off"></label>
+        </div>`; }).join('') : ''}
         <label class="field"><span>Notes</span><input id="a-notes" value="${esc(d.notes)}" placeholder="Weather, conditions…"></label>
         <div id="ap-block" ${appLetters(t).length ? '' : 'hidden'}>
           <h3 class="h3s">Plots to Assess</h3>
@@ -1645,7 +1660,9 @@ function viewAssessForm(t, a, startStep) {
   function goStep(n) {
     if (n === 2) {
       if (!parseDmy($('a-date').value)) { alert('Please enter the date as DD/MM/YYYY.'); $('a-date').focus(); return; }
-      if (!$('a-bbch').value.trim()) { alert('Please enter the crop growth stage (BBCH) – the majority value.'); $('a-bbch').focus(); return; }
+      if (!$('a-bbch').value.trim()) { alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
+      const emptyStage = [...app.querySelectorAll('input[data-sb][data-sf="b"]')].find(inp => !inp.value.trim());
+      if (emptyStage) { alert(`Please enter the crop growth stage (BBCH) of ${cropSetName(t, +emptyStage.dataset.sb)} – the majority value.`); emptyStage.focus(); return; }
     }
     showStep(n);
   }
@@ -1802,11 +1819,17 @@ function viewAssessForm(t, a, startStep) {
   app.querySelectorAll('[data-pt]').forEach(b => b.onclick = () => { const [pi, ti] = b.dataset.pt.split('.').map(Number); toast(addFrom(prevAs[pi].types[ti]) ? 'Added' : 'Already added'); drawTypes(); });
   app.querySelectorAll('[data-pall]').forEach(b => b.onclick = () => { let n = 0; prevAs[+b.dataset.pall].types.forEach(ty => { if (addFrom(ty)) n++; }); drawTypes(); toast(n ? `Added ${n} assessment${n > 1 ? 's' : ''}` : 'Already added'); });
 
+  function readSetStages() { // the growth stage of the 2nd, 3rd… crop / variety
+    const ins = [...app.querySelectorAll('input[data-sb]')]; if (!ins.length) return;
+    const o = {}; ins.forEach(inp => { const i = inp.dataset.sb; (o[i] = o[i] || {})[inp.dataset.sf] = inp.value.trim(); });
+    d.setBBCH = o;
+  }
   function commit(startAfter) {
     d.date = parseDmy($('a-date').value); d.assessor = $('a-who').value.trim().toUpperCase(); d.notes = $('a-notes').value.trim();
-    d.cropBBCH = $('a-bbch').value.trim(); d.cropBBCHMin = $('a-bbch-min').value.trim(); d.cropBBCHMax = $('a-bbch-max').value.trim();
+    d.cropBBCH = $('a-bbch').value.trim(); d.cropBBCHMin = $('a-bbch-min').value.trim(); d.cropBBCHMax = $('a-bbch-max').value.trim(); readSetStages();
     if (!d.date) { showStep(1); alert('Please enter the date as DD/MM/YYYY.'); $('a-date').focus(); return; }
-    if (!d.cropBBCH) { showStep(1); alert('Please enter the crop growth stage (BBCH) – the majority value.'); $('a-bbch').focus(); return; }
+    if (!d.cropBBCH) { showStep(1); alert(`Please enter the crop growth stage (BBCH)${multiSet(t) ? ' of ' + cropSetName(t, 0) : ''} – the majority value.`); $('a-bbch').focus(); return; }
+    if (multiSet(t)) { const miss = t.sets.findIndex((_, i) => i && !stageOf(d, i).b); if (miss > 0) { showStep(1); alert(`Please enter the crop growth stage (BBCH) of ${cropSetName(t, miss)} – the majority value.`); app.querySelector(`[data-sb="${miss}"][data-sf="b"]`).focus(); return; } }
     const tr = v => String(v ?? '').trim();
     d.types = d.types.map(ty => ({ ...ty, name: tr(ty.name), unit: tr(ty.unit), min: tr(ty.min), max: tr(ty.max), stage: tr(ty.stage), stageMin: tr(ty.stageMin), stageMax: tr(ty.stageMax), sizeH: tr(ty.sizeH), sizeW: tr(ty.sizeW), subs: subsOf(ty), atype: tr(ty.atype) })).filter(ty => ty.name);
     if (startAfter && !d.types.length) { showStep(2); alert('Add at least one assessment first.'); return; }
@@ -1840,12 +1863,12 @@ function viewAssessForm(t, a, startStep) {
   let finished = false;
   const collectFields = () => {
     d.assessor = $('a-who').value.trim().toUpperCase(); d.notes = $('a-notes').value.trim();
-    d.cropBBCH = $('a-bbch').value.trim(); d.cropBBCHMin = $('a-bbch-min').value.trim(); d.cropBBCHMax = $('a-bbch-max').value.trim();
+    d.cropBBCH = $('a-bbch').value.trim(); d.cropBBCHMin = $('a-bbch-min').value.trim(); d.cropBBCHMax = $('a-bbch-max').value.trim(); readSetStages();
     d.date = parseDmy($('a-date').value) || d.date;
   };
   const snap = () => {
     if (finished || !$('a-date')) return null; // the form is already gone
-    collectFields(); if (!editing && !d.cropBBCH && !d.types.length && !d.notes && !d.apps) return null; // nothing worth keeping yet
+    collectFields(); if (!editing && !d.cropBBCH && !Object.values(d.setBBCH || {}).some(x => x.b) && !d.types.length && !d.notes && !d.apps) return null; // nothing worth keeping yet
     const { data, ...rest } = d;
     return { data: { d: JSON.parse(JSON.stringify(rest)), dateTxt: $('a-date').value }, step };
   };
@@ -2268,7 +2291,8 @@ function excelFile(t, only) {
     const gc = geoLabelled(t);
     if (gc.length) rows.push([B('Trial corners (WGS84)'), ...gc.map(c => `${c.lab}: ${fmtCoord(c.lat)}, ${fmtCoord(c.lon)}${c.acc ? ` (±${Math.round(c.acc)} m)` : ''}`), B('Accuracy'), `Phone GPS ${geoAccRange(gc)}`.trim()]);
     as.forEach(a => {
-      rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B('Crop GS (BBCH) majority'), a.cropBBCH || null, B('Min'), a.cropBBCHMin || null, B('Max'), a.cropBBCHMax || null, B('Notes'), a.notes || null]);
+      rows.push([B('Assessment date'), dmy(a.date), B('Assessor'), a.assessor || null, B(ms ? `Crop GS (BBCH) majority – ${cropSetName(t, 0)}` : 'Crop GS (BBCH) majority'), a.cropBBCH || null, B('Min'), a.cropBBCHMin || null, B('Max'), a.cropBBCHMax || null, B('Notes'), a.notes || null]);
+      if (ms) t.sets.forEach((_, i) => { if (!i) return; const st = stageOf(a, i); rows.push([null, null, null, null, B(`Crop GS (BBCH) majority – ${cropSetName(t, i)}`), st.b || null, B('Min'), st.min || null, B('Max'), st.max || null]); });
       const seenT = new Set();
       a.types.filter(needsStage).forEach(ty => {
         const k = ty.kind + ':' + ty.target; if (seenT.has(k)) return; seenT.add(k);
@@ -2290,7 +2314,7 @@ function excelFile(t, only) {
   const long = [['Trial', 'Crop', 'Crop code', ...(ms ? ['Crop/Variety'] : []), 'Plot', 'Rep', 'Trt', 'Treatment', 'Untreated', 'Date', 'Assessor', 'Crop BBCH (majority)', 'Crop BBCH min', 'Crop BBCH max', 'Assessment', 'Assessment type', 'Target', 'Target stage (majority)', 'Target stage min', 'Target stage max', 'Weed height', 'Weed width', 'Weed size unit', 'Leaf level', 'Subsample', 'Unit', 'Value', 'Plot note', ...(hasApps ? ['Applications assessed'] : [])].map(B)];
   as.forEach(a => ps.forEach(p => expandCols([a]).forEach(c => {
     const ty = c.ty; if (!applies(t, ty, p.trt, a)) return;
-    long.push([t.trialId, cp.name || null, cp.code || null, ...(ms ? [setName(t, p.set)] : []), pn(p.plot), p.rep, p.trt, trtName(t, p.trt) || null, p.trt === t.untreated ? 'Yes' : null, dmy(a.date), a.assessor || null, a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null, ty.name, ty.atype || null, ty.target || null, ty.stage || null, ty.stageMin || null, ty.stageMax || null, ty.sizeH || null, ty.sizeW || null, (ty.sizeH || ty.sizeW) ? (ty.sizeUnit || 'cm') : null, ty.leaf || null, c.k === null ? null : c.k + 1, ty.unit || null, cell(colVal(c, p.plot)), (a.data[p.plot] && a.data[p.plot]._note) || null, ...(hasApps ? [scopeText(t, a)] : [])]);
+    long.push([t.trialId, cp.name || null, cp.code || null, ...(ms ? [setName(t, p.set)] : []), pn(p.plot), p.rep, p.trt, trtName(t, p.trt) || null, p.trt === t.untreated ? 'Yes' : null, dmy(a.date), a.assessor || null, stageOf(a, p.set || 0).b || null, stageOf(a, p.set || 0).min || null, stageOf(a, p.set || 0).max || null, ty.name, ty.atype || null, ty.target || null, ty.stage || null, ty.stageMin || null, ty.stageMax || null, ty.sizeH || null, ty.sizeW || null, (ty.sizeH || ty.sizeW) ? (ty.sizeUnit || 'cm') : null, ty.leaf || null, c.k === null ? null : c.k + 1, ty.unit || null, cell(colVal(c, p.plot)), (a.data[p.plot] && a.data[p.plot]._note) || null, ...(hasApps ? [scopeText(t, a)] : [])]);
   })));
 
   // 3. Field layout
@@ -2312,7 +2336,7 @@ function excelFile(t, only) {
     [B('Plots'), plotCount(t)], ...(hasApps ? [[B('Applications'), appLetters(t).length]] : []), [B('Buffer plots'), bufferPlots(t).length || null], [B('Randomization'), isCustom(t) ? 'Custom randomization' : 'Regular RCB'], [B('Plot numbering'), isCustom(t) ? 'Custom' : t.numbering === 'seq' ? 'Sequential' : 'By rep (101, 201…)'],
     [B('Exported'), new Date().toLocaleString('en-GB')], [B('NA'), 'Plot not assessed'], [], [B('Trt'), B('Treatment name'), ...(hasApps ? [B('Applications')] : [])], ...range(t.trts).map(k => [k, trtName(t, k) || null, ...(hasApps ? [trtApps(t, k).join(', ') || null] : [])]),
     [], [B('Date'), B('Assessor'), B('Crop BBCH (majority)'), B('BBCH min'), B('BBCH max'), B('Assessment types'), B('Plots complete'), B('Notes'), ...(hasApps ? [B('Applications assessed')] : [])],
-    ...as.map(a => [dmy(a.date), a.assessor || null, a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null, a.types.map(typeLabel).join('; '), `${countDone(t, a)} / ${nPlots(t, a)}`, a.notes || null, ...(hasApps ? [scopeText(t, a)] : [])])];
+    ...as.map(a => [dmy(a.date), a.assessor || null, ...(ms ? [stageText(t, a) || null, null, null] : [a.cropBBCH || null, a.cropBBCHMin || null, a.cropBBCHMax || null]), a.types.map(typeLabel).join('; '), `${countDone(t, a)} / ${nPlots(t, a)}`, a.notes || null, ...(hasApps ? [scopeText(t, a)] : [])])];
   if (as.some(a => a.comment)) info.push([], [B('Trial comments (by assessment date)')], [B('Date'), B('Comment')], ...as.filter(a => a.comment).map(a => [dmy(a.date), a.comment]));
   if (as.some(a => (a.unlockLog || []).length)) info.push([], [B('Data changes after unlocking')], [B('Date'), B('Unlocked'), B('By'), B('Locked again'), B('Reason for change')], ...as.flatMap(a => (a.unlockLog || []).map(l => [dmy(a.date), dtTxt(l.ts), l.who || null, l.relocked ? dtTxt(l.relocked) : 'Not locked again', l.reason])));
   if (geoLabelled(t).length) info.push([], [B('Trial corner coordinates (WGS84, decimal degrees)')], [B('Corner'), B('Latitude'), B('Longitude'), B('GPS accuracy (m)')], ...geoLabelled(t).map(c => [CORNER_NAME[c.lab] ? `${CORNER_NAME[c.lab]} (${c.n})` : c.n, +fmtCoord(c.lat), +fmtCoord(c.lon), c.acc ? Math.round(c.acc) : null]), [B('Accuracy'), GEO_NOTE]);
@@ -2395,7 +2419,7 @@ function pdfFile(t, list) {
     { s: `${t.trialId} – Assessment ${dmy(a.date)}`, size: 11, bold: true },
     { s: [t.type, cropTxt, repsTxt].filter(Boolean).join('  ·  '), size: 8 },
     ...geoHdr,
-    { s: `Assessor: ${a.assessor || '–'}    Crop growth stage (BBCH): ${rng(a.cropBBCH || '–', a.cropBBCHMin, a.cropBBCHMax)}${appLetters(t).length ? '    Applications assessed: ' + scopeText(t, a) : ''}${a.notes ? '    Notes: ' + a.notes : ''}`, size: 8 },
+    { s: `Assessor: ${a.assessor || '–'}    Crop growth stage (BBCH): ${multiSet(t) ? stageText(t, a) : rng(a.cropBBCH || '–', a.cropBBCHMin, a.cropBBCHMax)}${appLetters(t).length ? '    Applications assessed: ' + scopeText(t, a) : ''}${a.notes ? '    Notes: ' + a.notes : ''}`, size: 8 },
     ...wrapText('Assessments: ' + a.types.map(assessDesc).join('  •  '), W - 2 * M, 7, 4).map(s => ({ s, size: 7 })),
   ];
   sorted.forEach(a => {
@@ -2728,9 +2752,9 @@ function tilesUpdate(g, v, style) {
   prune();
 }
 /* one finger drags, two fingers pinch, double-tap or mouse wheel zooms. get() gives the view, set(v) shows a new one */
-function panZoom(el, get, set) {
+function panZoom(el, get, set, unit) { // unit() = view units per screen pixel, for a map drawn in a scaled box
   const pts = new Map(); let last = null, lastTap = 0;
-  const rel = e => { const r = el.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  const rel = e => { const r = el.getBoundingClientRect(), u = unit ? unit() : 1; return [(e.clientX - r.left) * u, (e.clientY - r.top) * u]; };
   const zoomAt = (v, mx, my, f) => { const k = clamp(v.k * f, 256 * 2 ** 4, 256 * 2 ** 22), wx = v.cx + (mx - v.W / 2) / v.k, wy = v.cy + (my - v.H / 2) / v.k; return { ...v, k, cx: wx - (mx - v.W / 2) / k, cy: wy - (my - v.H / 2) / k }; };
   const now = () => { const a = [...pts.values()]; if (a.length < 2) return { m: a[0], d: 0 }; const [p, q] = a; return { m: [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], d: Math.hypot(p[0] - q[0], p[1] - q[1]) }; };
   el.addEventListener('pointerdown', e => {
@@ -2941,6 +2965,9 @@ function viewLocation(t) {
       ${fld(LOC_TEXT[1], 'e.g. nearest town / farm')}${fld(LOC_TEXT[2])}
     </div></section>
     ${cs.length ? `<section class="card"><h2>Corners</h2>${cornerRowsHtml(t)}</section>` : ''}
+    ${cs.length || pk ? `<section class="card"><h2>Maps on the Sheet</h2>
+      <p class="small muted" style="margin:0">Drag to move, pinch to zoom (or use − and ＋). The sheet uses exactly what you see here. The satellite picture needs internet.</p>
+      ${locMapHtml('ov', 'Overview')}${locMapHtml('cu', 'Close-up')}</section>` : ''}
     <section class="card"><div class="arow"><h2 style="margin:0">Address</h2><button type="button" class="small" id="loc-look">Look Up from GPS</button></div>
       <p class="small muted" style="margin:6px 0 8px">Fills in the postcode, city, county and country from the ${pk ? 'parking / gate point' : 'trial location'} (UK only, needs internet). Check it and correct anything that is wrong.</p>
       <div class="grid2">${LOC_ADDR.map(f => fld(f)).join('')}</div></section>
@@ -2974,6 +3001,7 @@ function viewLocation(t) {
     flushDraft(); location.href = `https://what3words.com/${ll6}`; // opened in place, so no blank page is left behind; Back (or Done) returns here – everything typed is already saved
   });
   wireCornerPick(app, t, () => viewLocation(t));
+  wireLocMap(t, 'ov'); wireLocMap(t, 'cu');
   document.getElementById('loc-sig').onclick = () => openSignaturePad(() => viewLocation(t));
   const dIn = app.querySelector('[data-k="date"]');
   dIn.onchange = () => { const v = dIn.value.trim(); if (!v) return; const iso = parseDmy(v); if (!iso) { toast('Type the date as DD/MM/YYYY'); return; } dIn.value = dmy(iso); t.loc.date = dmy(iso); save(); };
@@ -3054,33 +3082,66 @@ function canvasOutline(ctx, P, labs, scale) {
 }
 function canvasP(ctx, x, y, scale) { const r = 15 * scale; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = '#e8590c'; ctx.fill(); ctx.lineWidth = 3 * scale; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.round(16 * scale)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('P', x, y + 1); ctx.textBaseline = 'alphabetic'; }
+/* the two maps on the sheet: the same pixels in the preview (where they can be dragged and zoomed) and in the PDF */
+const LOC_MAP = { ov: { W: 567, H: 432 }, cu: { W: 1063, H: 484 } }; // twice the size they are printed at
+const invMercY = y => Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI;
+const viewToStore = v => { const lat = invMercY(v.cy); return { lat, lon: v.cx * 360 - 180, m: v.W / v.k * worldM(lat) }; }; // centre + metres across, so it doesn't depend on screen size
+const viewFromStore = (st, W, H) => ({ cx: mercX(st.lon), cy: mercY(st.lat), k: W / (st.m / worldM(st.lat)), W, H, lat: st.lat });
+function locGeo(t) {
+  const cs = geoPts(t), pk = geoParking(t), all = [...cs, ...(pk ? [pk] : [])];
+  const cen = cs.length ? { lat: cs.reduce((s, c) => s + c.lat, 0) / cs.length, lon: cs.reduce((s, c) => s + c.lon, 0) / cs.length } : pk;
+  return { cs, pk, all, cen };
+}
+function locDefaultView(t, which) { // overview: about 2.2 km across; close-up: the trial and its gate with room around them
+  const g = locGeo(t), { W, H } = LOC_MAP[which]; if (!g.all.length) return null;
+  return which === 'ov' ? viewFromStore({ lat: g.cen.lat, lon: g.cen.lon, m: 2200 }, W, H) : fitView(g.all, W, H, 1.1);
+}
+function locView(t, which) { const st = t.loc && t.loc[which + 'View'], { W, H } = LOC_MAP[which]; return st && st.m ? viewFromStore(st, W, H) : locDefaultView(t, which); }
+function drawLocOverlay(ctx, t, which, v) {
+  const { cs, pk, cen } = locGeo(t), W = v.W, H = v.H;
+  if (which === 'ov') { // outline (tiny at this scale) with a red pin, and the gate
+    canvasOutline(ctx, cs.map(c => scr(v, c)), null, 1);
+    if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1); }
+    if (!cen) return;
+    const [x, y] = scr(v, cen); ctx.beginPath(); ctx.arc(x, y - 22, 12, Math.PI * 0.85, Math.PI * 0.15); ctx.lineTo(x, y); ctx.closePath(); ctx.fillStyle = '#d93025'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y - 22, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    return;
+  }
+  // close-up: outline, corner names, gate, and tags with arrows to them
+  canvasOutline(ctx, cs.map(c => scr(v, c)), cs.map(c => c.lab), 1.4);
+  if (pk) { const [x, y] = scr(v, pk); canvasP(ctx, x, y, 1.4); }
+  // the trial tag goes on the side away from the gate, so the two never cross; each sits above its target, or below it when the target is near the top
+  const c0 = cen ? scr(v, cen) : null, p0 = pk ? scr(v, pk) : null, trialLeft = !p0 || !c0 || p0[0] >= c0[0], sc = 1.6;
+  const tail = (x, y, left) => ({ x: left ? W * 0.2 : W * 0.8, y: y < H * 0.42 ? H - 34 : 34 });
+  if (cs.length) canvasCallout(ctx, t.trialId, '#0072CE', tail(c0[0], c0[1], trialLeft), { x: c0[0], y: c0[1] }, sc, 0);
+  if (p0) canvasCallout(ctx, 'Parking / Gate', '#e8590c', tail(p0[0], p0[1], !trialLeft), { x: p0[0], y: p0[1] }, sc, 24);
+}
+function locMapHtml(which, title) {
+  const { W, H } = LOC_MAP[which];
+  return `<div class="arow" style="margin-top:8px"><b>${title}</b><span style="display:flex;gap:6px"><button type="button" class="small" data-mz="${which}" data-f="0.5" aria-label="Zoom out">−</button><button type="button" class="small" data-mz="${which}" data-f="2" aria-label="Zoom in">＋</button><button type="button" class="small" data-mreset="${which}">Reset</button></span></div>
+    <div class="locmap" id="lm-${which}" style="aspect-ratio:${W} / ${H};${which === 'ov' ? 'max-width:420px' : ''}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><g></g></svg><canvas width="${W}" height="${H}"></canvas></div>`;
+}
+function wireLocMap(t, which) {
+  const el = document.getElementById('lm-' + which); if (!el) return;
+  const g = el.querySelector('g'), cv = el.querySelector('canvas'), ctx = cv.getContext('2d');
+  let v = locView(t, which), timer = 0, raf = 0;
+  if (!v) return;
+  const draw = () => { tilesUpdate(g, v, 'sat'); ctx.clearRect(0, 0, cv.width, cv.height); drawLocOverlay(ctx, t, which, v); };
+  const keep = () => { clearTimeout(timer); timer = setTimeout(() => { t.loc = t.loc || {}; t.loc[which + 'View'] = viewToStore(v); t.updated = Date.now(); save(); }, 300); };
+  const pz = panZoom(el, () => v, nv => { v = nv; if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); keep(); }, () => v.W / (el.clientWidth || v.W));
+  app.querySelectorAll(`[data-mz="${which}"]`).forEach(b => b.onclick = () => pz.zoomBy(+b.dataset.f));
+  app.querySelectorAll(`[data-mreset="${which}"]`).forEach(b => b.onclick = () => { clearTimeout(timer); if (t.loc) delete t.loc[which + 'View']; t.updated = Date.now(); save(); v = locDefaultView(t, which); draw(); });
+  draw();
+}
 async function locationPdf(t) {
   const L = t.loc || {}, cs = geoPts(t), pk = geoParking(t), ll = geoLL(t), all = [...cs, ...(pk ? [pk] : [])];
   const PW = 595.28, PH = 841.89, M = 28, R = PW - M;
-  // the two maps: a wide overview (about 2 km across) and a close-up of the trial and its gate
+  // the two maps: a wide overview and a close-up of the trial and its gate, framed as set in the preview
   const OV = { x: M + 250, y: 194, w: R - 6 - (M + 250), h: 216 }, CU = { x: M + 4, y: 440, w: R - M - 8, h: 242 };
   let ov = null, cu = null;
   if (all.length) {
-    const cen = cs.length ? { lat: cs.reduce((s, c) => s + c.lat, 0) / cs.length, lon: cs.reduce((s, c) => s + c.lon, 0) / cs.length } : pk;
-    const oW = Math.round(OV.w * 2), oH = Math.round(OV.h * 2), oV = { cx: mercX(cen.lon), cy: mercY(cen.lat), k: oW / (2200 / worldM(cen.lat)), W: oW, H: oH, lat: cen.lat };
-    const cW = Math.round(CU.w * 2), cH = Math.round(CU.h * 2), cV = fitView(all, cW, cH, 1.1);
-    [ov, cu] = await Promise.all([
-      mapJpeg(oV, oW, oH, ctx => { // overview: outline (tiny at this scale) with a red pin, and the gate
-        canvasOutline(ctx, cs.map(c => scr(oV, c)), null, 1);
-        if (pk) { const [x, y] = scr(oV, pk); canvasP(ctx, x, y, 1); }
-        const [x, y] = scr(oV, cen); ctx.beginPath(); ctx.arc(x, y - 22, 12, Math.PI * 0.85, Math.PI * 0.15); ctx.lineTo(x, y); ctx.closePath(); ctx.fillStyle = '#d93025'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#fff'; ctx.stroke();
-        ctx.beginPath(); ctx.arc(x, y - 22, 4.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
-      }),
-      mapJpeg(cV, cW, cH, ctx => { // close-up: outline, corner names, gate, and arrows to them
-        const P = cs.map(c => scr(cV, c)); canvasOutline(ctx, P, cs.map(c => c.lab), 1.4);
-        if (pk) { const [x, y] = scr(cV, pk); canvasP(ctx, x, y, 1.4); }
-        // the trial tag goes on the side away from the gate, so the two never cross; each sits above its target, or below it when the target is near the top
-        const c0 = scr(cV, cen), p0 = pk ? scr(cV, pk) : null, trialLeft = !p0 || p0[0] >= c0[0], sc = 1.6;
-        const tail = (x, y, left) => ({ x: left ? cW * 0.2 : cW * 0.8, y: y < cH * 0.42 ? cH - 34 : 34 });
-        if (cs.length) canvasCallout(ctx, t.trialId, '#0072CE', tail(c0[0], c0[1], trialLeft), { x: c0[0], y: c0[1] }, sc, 0);
-        if (p0) canvasCallout(ctx, 'Parking / Gate', '#e8590c', tail(p0[0], p0[1], !trialLeft), { x: p0[0], y: p0[1] }, sc, 24);
-      }),
-    ]);
+    const oV = locView(t, 'ov'), cV = locView(t, 'cu');
+    [ov, cu] = await Promise.all([mapJpeg(oV, oV.W, oV.H, ctx => drawLocOverlay(ctx, t, 'ov', oV)), mapJpeg(cV, cV.W, cV.H, ctx => drawLocOverlay(ctx, t, 'cu', cV))]);
   }
   // ---- PDF ----
   const ops = [], f1 = n => (Math.round(n * 100) / 100).toString(), Y = y => f1(PH - y);
