@@ -2717,7 +2717,7 @@ const geoHeaderTxt = t => { const cs = geoLabelled(t); if (!cs.length) return ''
 const parkSvg = (v, p) => { const [x, y] = scr(v, p); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="13" fill="#e8590c" stroke="#fff" stroke-width="2.5"/><text x="${x.toFixed(1)}" y="${(y + 5).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">P</text>`; };
 const northSvg = (x, y, k) => `<g transform="translate(${x} ${y}) scale(${k})"><path d="M0 -13L8 9L0 4Z" fill="#1a1a1a" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/><path d="M0 -13L-8 9L0 4Z" fill="#fff" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round"/><text x="0" y="22" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" stroke="#1a1a1a" stroke-width="3" paint-order="stroke">N</text></g>`; // a north arrow: half dark, half white, so it shows on any background
 function trialMapSvg(t, W, H) { // the trial on a map: numbered corners, each with its LL / UL / UR / LR tag once all 4 are in, and the gate
-  const cs = geoPts(t), pk = geoParking(t), st = db.settings.mapStyle || 'sat', sat = st !== 'none';
+  const cs = geoPts(t), pk = geoParking(t), st = mapStyleOf(), sat = true;
   const v = fitView([...cs, ...(pk ? [pk] : [])], W, H, 0.9);
   let s = tilesSvg(v, st) + outlineSvg(v, cs, !sat) + (pk ? parkSvg(v, pk) : '');
   if (cs.length === 4) {
@@ -2760,6 +2760,7 @@ function geoCardHtml(t) {
 }
 function wireGeoCard(t, again) {
   const card = document.getElementById('geo-card'); if (card) wireCornerPick(card, t, again);
+  osmPrefetch(t);
   const sec = document.getElementById('geo-sec'); if (sec) sec.addEventListener('toggle', () => { db.settings.geoOpen = sec.open; persistQuiet(); }); // remembers open / closed
   const w = document.getElementById('geo-walk'); if (!w) return;
   w.onclick = () => openTrialMap(t, again);
@@ -2777,10 +2778,11 @@ function wireGeoCard(t, again) {
   if (cl) cl.onclick = () => { if (!confirm('Clear the recorded corner coordinates of this trial?')) return; delete t.geo; t.updated = Date.now(); save(); again(); };
 }
 /* map tiles kept as live elements, so dragging and pinching move them instead of reloading them */
+const mapStyleOf = () => db.settings.mapStyle === 'map' ? 'map' : 'sat'; // Satellite or Street (older 'Plain' counts as Satellite)
 const tileUrl = (style, z, x, y) => style === 'map' ? `https://tile.openstreetmap.org/${z}/${x}/${y}.png` : `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
-function tilesUpdate(g, v, style) {
+function tilesUpdate(g, v, style, coarse) { // coarse = one zoom level lower, drawn larger (street-map names readable on the printed sheet)
   if (style === 'none') { g.innerHTML = ''; return; }
-  const z = clamp(Math.round(Math.log2(v.k / 256)), 0, 19), n = 2 ** z;
+  const z = clamp(coarse ? Math.floor(Math.log2(v.k / 256)) : Math.round(Math.log2(v.k / 256)), 0, 19), n = 2 ** z;
   const xa = Math.floor((v.cx - v.W / 2 / v.k) * n), xb = Math.floor((v.cx + v.W / 2 / v.k) * n), ya = Math.max(0, Math.floor((v.cy - v.H / 2 / v.k) * n)), yb = Math.min(n - 1, Math.floor((v.cy + v.H / 2 / v.k) * n));
   const wanted = new Set(), key = im => im.getAttribute('href') + '|' + im.dataset.tx;
   const have = new Map([...g.children].map(im => [key(im), im]));
@@ -2838,8 +2840,8 @@ function openTrialMap(t, after) {
     <div class="mappanel" id="mp-panel"></div>`;
   document.body.appendChild(ov);
   const q = s => ov.querySelector(s), wrap = q('#mp-wrap'), svgT = q('#mp-tiles'), svgD = q('#mp-dyn'), msgEl = q('#mp-msg');
-  const STYLES = { sat: 'Satellite', map: 'Street Map', none: 'Plain' };
-  let pos = null, trail = [], view = null, manual = false, style = db.settings.mapStyle || 'sat', err = '', watchId = null, wake = null, closed = false, hadFix = false;
+  const STYLES = { sat: 'Satellite', map: 'Street Map' };
+  let pos = null, trail = [], view = null, manual = false, style = mapStyleOf(), err = '', watchId = null, wake = null, closed = false, hadFix = false;
   let anchor = null, stableSince = 0, win = [], lastJump = 0; // standing-still check
   const corners = () => (t.geo && t.geo.corners) || [];
   const nextCorner = () => { const cs = corners(); const i = cs.findIndex((c, k) => !c && k < 4); return i >= 0 ? i : cs.length < 4 ? cs.length : -1; };
@@ -3089,7 +3091,7 @@ function viewLocation(t) {
 }
 /* satellite map drawn onto a canvas (so it can go into the PDF) */
 const loadImg = (url, ms) => new Promise(res => { const im = new Image(); im.crossOrigin = 'anonymous'; const tm = setTimeout(() => res(null), ms || 12000); im.onload = () => { clearTimeout(tm); res(im); }; im.onerror = () => { clearTimeout(tm); res(null); }; im.src = url; });
-async function mapJpeg(v, W, H, overlay, names) { // names = credit OpenStreetMap too (its roads are drawn by the overlay)
+async function mapJpeg(v, W, H, overlay, names, style) { // names = credit OpenStreetMap too (its roads are drawn by the overlay); style = 'sat' or 'map' (street)
   const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const ctx = cv.getContext('2d');
   ctx.fillStyle = '#dfe7ef'; ctx.fillRect(0, 0, W, H);
   const layer = async (style, z0) => {
@@ -3104,10 +3106,10 @@ async function mapJpeg(v, W, H, overlay, names) { // names = credit OpenStreetMa
     got.forEach(({ im, x, y }) => { if (im) ctx.drawImage(im, x, y, sz + 0.6, sz + 0.6); });
     return got.filter(g => g.im).length;
   };
-  const ok = await layer('sat', clamp(Math.ceil(Math.log2(v.k / 256)), 0, 19));
+  const street = style === 'map', ok = await layer(street ? 'map' : 'sat', clamp(street ? Math.floor(Math.log2(v.k / 256)) : Math.ceil(Math.log2(v.k / 256)), 0, 19));
   overlay(ctx);
-  const credit = names ? 'Imagery © Esri · Roads & names © OpenStreetMap contributors' : 'Imagery © Esri';
-  ctx.font = `${Math.round(H / 40)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.fillStyle = '#fff';
+  const credit = street ? '© OpenStreetMap contributors' : names ? 'Imagery © Esri · Roads & names © OpenStreetMap contributors' : 'Imagery © Esri';
+  ctx.font = `${Math.round(H / 40)}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'right'; ctx.lineWidth = 3; ctx.strokeStyle = street ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.7)'; ctx.fillStyle = street ? '#333' : '#fff';
   if (ok || names) { ctx.strokeText(credit, W - 8, H - 8); ctx.fillText(credit, W - 8, H - 8); }
   let data; try { data = cv.toDataURL('image/jpeg', 0.85); } catch (e) { data = null; }
   return { data, ok: ok > 0, w: W, h: H };
@@ -3196,10 +3198,13 @@ function drawLocOverlay(ctx, t, which, v) {
   return keep;
 }
 const ptsBox = (P, pad) => ({ x0: Math.min(...P.map(q => q[0])) - pad, x1: Math.max(...P.map(q => q[0])) + pad, y0: Math.min(...P.map(q => q[1])) - pad, y1: Math.max(...P.map(q => q[1])) + pad });
+const locStyle = (t, which) => (t.loc && t.loc[which + 'Style']) === 'map' ? 'map' : 'sat'; // Satellite (default) or Street, chosen per map
+const namesOn = (t, which) => locStyle(t, which) === 'sat' && locNames(t, which); // the street map already has its own names
 const locNames = (t, which) => { const v = t.loc && t.loc[which + 'Names']; return v === undefined ? which === 'ov' : !!v; }; // overview: on unless switched off; close-up: off unless switched on
 function locMapHtml(which, title, t) {
-  const { W, H } = LOC_MAP[which];
-  return `<div class="arow" style="margin-top:8px"><b>${title}</b><label class="chk small" style="margin:0 auto 0 4px"><input type="checkbox" data-mnames="${which}" ${locNames(t, which) ? 'checked' : ''}> Road &amp; place names</label><span style="display:flex;gap:6px"><button type="button" class="small" data-mz="${which}" data-f="0.5" aria-label="Zoom out">−</button><button type="button" class="small" data-mz="${which}" data-f="2" aria-label="Zoom in">＋</button><button type="button" class="small" data-mreset="${which}">Reset</button></span></div>
+  const { W, H } = LOC_MAP[which], st = locStyle(t, which);
+  return `<div class="arow" style="margin-top:10px"><b>${title}</b><div class="seg mini" style="margin:0"><button type="button" data-mst="${which}" data-v="sat" class="${st === 'sat' ? 'on' : ''}">Satellite</button><button type="button" data-mst="${which}" data-v="map" class="${st === 'map' ? 'on' : ''}">Street</button></div></div>
+    <div class="arow" style="margin-top:6px"><label class="chk small" style="margin:0" ${st === 'map' ? 'hidden' : ''}><input type="checkbox" data-mnames="${which}" ${locNames(t, which) ? 'checked' : ''}> Road &amp; place names</label><span class="small muted" ${st === 'map' ? '' : 'hidden'}>The street map shows road &amp; place names.</span><span style="display:flex;gap:6px;margin-left:auto"><button type="button" class="small" data-mz="${which}" data-f="0.5" aria-label="Zoom out">−</button><button type="button" class="small" data-mz="${which}" data-f="2" aria-label="Zoom in">＋</button><button type="button" class="small" data-mreset="${which}">Reset</button></span></div>
     <div class="locmap" id="lm-${which}" style="aspect-ratio:${W} / ${H};${which === 'ov' ? 'max-width:420px' : ''}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"><g class="lb"></g></svg><canvas width="${W}" height="${H}"></canvas><svg class="lnames" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg></div>
     <p class="small muted" id="lm-${which}-note" style="margin:-4px 0 6px"></p>`;
 }
@@ -3210,18 +3215,22 @@ function wireLocMap(t, which) {
   let v = locView(t, which), timer = 0, raf = 0;
   if (!v) return;
   const draw = () => {
-    tilesUpdate(g, v, 'sat');
-    const on = locNames(t, which), data = on ? osmHave(v) : null;
+    const st = locStyle(t, which);
+    tilesUpdate(g, v, st, st === 'map');
+    const on = namesOn(t, which), data = on ? osmHave(v) : null;
     ctx.clearRect(0, 0, cv.width, cv.height);
     if (data) drawRoads(ctx, data, v);
     const keepClear = drawLocOverlay(ctx, t, which, v);
     nm.innerHTML = data ? labelsSvg(placeLabels(data, v, keepClear)) : '';
-    if (!on) { note.textContent = ''; return; }
+    if (!on) { note.textContent = st === 'map' ? 'Street map: © OpenStreetMap contributors' : ''; return; }
     if (data) { note.textContent = 'Roads & names: © OpenStreetMap contributors'; return; }
     note.textContent = 'Loading road & place names…';
-    const me = ++asked; clearTimeout(draw.t);
-    draw.t = setTimeout(() => osmGet(v).then(() => { if (me === asked) draw(); }).catch(() => { if (me === asked) note.textContent = "Road & place names couldn't be loaded (no internet?). They are added when you export with a connection."; }), 500);
+    const me = ++asked, go = () => osmGet(v).then(() => { if (me === asked) draw(); }).catch(() => { if (me === asked) note.textContent = "Road & place names couldn't be loaded (no internet?). They are added when you export with a connection."; });
+    clearTimeout(draw.t); if (me === 1) go(); else draw.t = setTimeout(go, 400); // straight away the first time; while dragging, once it settles
   };
+  app.querySelectorAll(`[data-mst="${which}"]`).forEach(b => b.onclick = () => { t.loc = t.loc || {}; t.loc[which + 'Style'] = b.dataset.v; t.updated = Date.now(); save();
+    app.querySelectorAll(`[data-mst="${which}"]`).forEach(x => x.classList.toggle('on', x === b));
+    const nl = app.querySelector(`[data-mnames="${which}"]`).closest('label'); nl.hidden = b.dataset.v === 'map'; nl.nextElementSibling.hidden = b.dataset.v !== 'map'; draw(); });
   const nb = app.querySelector(`[data-mnames="${which}"]`);
   if (nb) nb.onchange = () => { t.loc = t.loc || {}; t.loc[which + 'Names'] = nb.checked; t.updated = Date.now(); save(); draw(); };
   const keep = () => { clearTimeout(timer); timer = setTimeout(() => { t.loc = t.loc || {}; t.loc[which + 'View'] = viewToStore(v); t.updated = Date.now(); save(); }, 300); };
@@ -3231,25 +3240,66 @@ function wireLocMap(t, which) {
   draw();
 }
 /* ---------- road and place names from OpenStreetMap, drawn as real text (sharp on screen and in the PDF) ---------- */
-const OSM_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
-const osmStore = []; // { bb, data } already fetched this session; a view inside one of them needs no new request
-const osmPending = {};
+const OSM_ENDPOINTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']; // asked at the same time; the first good answer wins
+const osmStore = []; // { bb, data, minor } already loaded this session; a view inside one of them needs no new request
+const osmPending = {}; // { bb, minor, promise } being loaded; a view inside one of them waits for it instead of asking again
 const viewBounds = v => ({ w: (v.cx - v.W / 2 / v.k) * 360 - 180, e: (v.cx + v.W / 2 / v.k) * 360 - 180, n: invMercY(v.cy - v.H / 2 / v.k), s: invMercY(v.cy + v.H / 2 / v.k) });
-const osmHave = v => { const b = viewBounds(v); const hit = osmStore.find(o => o.bb.s <= b.s && o.bb.n >= b.n && o.bb.w <= b.w && o.bb.e >= b.e && o.minor === (osmSpanM(v) < 6000)); return hit ? hit.data : null; };
 const osmSpanM = v => v.W / v.k * worldM(v.lat);
-function osmGet(v) { // resolves with the roads and places around this view (fetched once, with some room to pan)
+const osmCovers = (o, b, minor) => o.bb.s <= b.s && o.bb.n >= b.n && o.bb.w <= b.w && o.bb.e >= b.e && (o.minor || !minor); // data with small roads also serves a view that doesn't need them
+const osmHave = v => { const b = viewBounds(v), hit = osmStore.find(o => osmCovers(o, b, osmSpanM(v) < 6000)); return hit ? hit.data : null; };
+// names already downloaded are kept on this device (browser cache storage, not part of backups), so a trial opened again shows them at once
+const OSM_IDX_KEY = 'fieldAssessments.osm', OSM_KEEP_DAYS = 45;
+let osmIdx = (() => { try { return JSON.parse(localStorage.getItem(OSM_IDX_KEY) || '[]'); } catch (e) { return []; } })();
+const osmUrl = key => new URL('./__osm/' + encodeURIComponent(key), location.href).href;
+async function osmFromDisk(b, minor) {
+  if (!window.caches) return null;
+  const e = osmIdx.find(o => osmCovers(o, b, minor) && Date.now() - o.ts < OSM_KEEP_DAYS * 864e5); if (!e) return null;
+  try { const r = await (await caches.open('fart-osm')).match(osmUrl(e.key)); if (!r) return null; const data = await r.json(); osmStore.push({ bb: e.bb, data, minor: e.minor }); return data; } catch (x) { return null; }
+}
+async function osmToDisk(bb, minor, key, data) {
+  if (!window.caches) return;
+  try {
+    const c = await caches.open('fart-osm'), old = osmIdx.filter(o => Date.now() - o.ts >= OSM_KEEP_DAYS * 864e5);
+    await c.put(osmUrl(key), new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } }));
+    osmIdx = osmIdx.filter(o => o.key !== key && !old.includes(o)).concat({ bb, minor, key, ts: Date.now() });
+    while (osmIdx.length > 40) old.push(osmIdx.shift());
+    old.forEach(o => c.delete(osmUrl(o.key)));
+    localStorage.setItem(OSM_IDX_KEY, JSON.stringify(osmIdx));
+  } catch (x) {}
+}
+function osmRace(q) { // every server at once; the others are cancelled when one answers
+  const ctl = OSM_ENDPOINTS.map(() => new AbortController()), stop = setTimeout(() => ctl.forEach(c => c.abort()), 30000);
+  return new Promise((res, rej) => {
+    let left = OSM_ENDPOINTS.length, done = false;
+    OSM_ENDPOINTS.forEach((u, i) => fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q), signal: ctl[i].signal })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(d => { if (!d || !Array.isArray(d.elements)) throw new Error('bad reply'); if (done) return; done = true; clearTimeout(stop); ctl.forEach((c, j) => { if (j !== i) c.abort(); }); res(d); })
+      .catch(e => { if (--left === 0 && !done) { clearTimeout(stop); rej(e); } }));
+  });
+}
+function osmGet(v) { // resolves with the roads and places around this view (loaded once, with some room to pan)
   const got = osmHave(v); if (got) return Promise.resolve(got);
-  const b = viewBounds(v), dx = (b.e - b.w) * 0.5, dy = (b.n - b.s) * 0.5, g = 0.01, minor = osmSpanM(v) < 6000;
+  const b = viewBounds(v), minor = osmSpanM(v) < 6000;
+  const pend = Object.values(osmPending).find(o => osmCovers(o, b, minor)); if (pend) return pend.promise;
+  const dx = (b.e - b.w) * 0.35, dy = (b.n - b.s) * 0.35, g = 0.01;
   const bb = { s: Math.floor((b.s - dy) / g) * g, w: Math.floor((b.w - dx) / g) * g, n: Math.ceil((b.n + dy) / g) * g, e: Math.ceil((b.e + dx) / g) * g };
-  const key = [bb.s, bb.w, bb.n, bb.e, minor].map(String).join(',');
-  if (osmPending[key]) return osmPending[key];
+  const key = [bb.s, bb.w, bb.n, bb.e].map(x => x.toFixed(2)).join(',') + (minor ? ',m' : '');
   const box = `(${bb.s.toFixed(4)},${bb.w.toFixed(4)},${bb.n.toFixed(4)},${bb.e.toFixed(4)})`;
   const hw = minor ? 'motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|track' : 'motorway|trunk|primary|secondary|tertiary|unclassified';
-  const q = `[out:json][timeout:25];(node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|locality|farm|isolated_dwelling)$"]["name"]${box};way["highway"~"^(${hw})(_link)?$"]${box};);out geom qt;`;
-  const tryAt = i => fetch(OSM_ENDPOINTS[i], { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'data=' + encodeURIComponent(q) })
-    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-    .catch(e => { if (i + 1 < OSM_ENDPOINTS.length) return tryAt(i + 1); throw e; });
-  return (osmPending[key] = tryAt(0).then(data => { osmStore.push({ bb, data, minor }); if (osmStore.length > 12) osmStore.shift(); return data; }).finally(() => { delete osmPending[key]; }));
+  const q = `[out:json][timeout:20];(node["place"~"^(city|town|village|hamlet|suburb|neighbourhood|locality|farm|isolated_dwelling)$"]["name"]${box};way["highway"~"^(${hw})(_link)?$"]${box};);out geom qt;`;
+  const promise = (async () => {
+    const disk = await osmFromDisk(b, minor); if (disk) return disk;
+    const data = await osmRace(q);
+    osmStore.push({ bb, data, minor }); if (osmStore.length > 12) osmStore.shift();
+    osmToDisk(bb, minor, key, data);
+    return data;
+  })().finally(() => { delete osmPending[key]; });
+  osmPending[key] = { bb, minor, promise };
+  return promise;
+}
+function osmPrefetch(t) { // start loading the sheet's names in the background when the trial is opened, so they are ready
+  if (!geoPts(t).length && !geoParking(t)) return;
+  setTimeout(() => ['ov', 'cu'].forEach(w => { if (!namesOn(t, w)) return; const v = locView(t, w); if (v) osmGet(v).catch(() => {}); }), 600);
 }
 const ROAD_STYLE = { // drawn in the map's pixels (twice the printed size)
   major: { c: 'rgba(255,201,77,.95)', w: 6 }, mid: { c: 'rgba(255,224,138,.92)', w: 4.4 }, minor: { c: 'rgba(255,255,255,.85)', w: 3 },
@@ -3321,9 +3371,9 @@ async function locationPdf(t) {
   let ov = null, cu = null;
   if (all.length) {
     const oV = locView(t, 'ov'), cV = locView(t, 'cu');
-    const net = async (vv, which) => locNames(t, which) ? osmGet(vv).catch(() => null) : null;
+    const net = async (vv, which) => namesOn(t, which) ? osmGet(vv).catch(() => null) : null;
     const [oN, cN] = await Promise.all([net(oV, 'ov'), net(cV, 'cu')]);
-    const one = async (vv, which, data) => { let keep = []; const img = await mapJpeg(vv, vv.W, vv.H, ctx => { if (data) drawRoads(ctx, data, vv); keep = drawLocOverlay(ctx, t, which, vv); }, !!data); img.labels = data ? placeLabels(data, vv, keep) : []; return img; };
+    const one = async (vv, which, data) => { let keep = []; const img = await mapJpeg(vv, vv.W, vv.H, ctx => { if (data) drawRoads(ctx, data, vv); keep = drawLocOverlay(ctx, t, which, vv); }, !!data, locStyle(t, which)); img.labels = data ? placeLabels(data, vv, keep) : []; return img; };
     [ov, cu] = await Promise.all([one(oV, 'ov', oN), one(cV, 'cu', cN)]);
   }
   // ---- PDF ----
