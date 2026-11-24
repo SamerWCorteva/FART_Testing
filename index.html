@@ -244,7 +244,7 @@ body.locked { overflow:hidden; }
 .phrow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-top:1px solid var(--line); flex-wrap:wrap; }
 .phrow:first-of-type { border-top:0; }
 .phbtns { display:flex; gap:6px; flex-wrap:wrap; }
-.camov { position:fixed; inset:0; z-index:70; background:#000; color:#fff; display:flex; flex-direction:column; }
+.camov { position:fixed; inset:0; z-index:70; background:#000; color:#fff; display:flex; flex-direction:column; overscroll-behavior:none; }
 .camtop { flex:none; display:flex; align-items:center; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 10px 8px; background:rgba(0,0,0,.6); }
 .camtop .camtitle { flex:1; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .camtop .seg { margin:0; }
@@ -292,11 +292,27 @@ body.locked { overflow:hidden; }
 .phquick .phqt span { font-size:.85rem; color:var(--muted); }
 .phquick .phqa { font-size:1.8rem; color:var(--accent); flex:none; }
 .phhead { font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 2px; }
-.phviewer { position:fixed; inset:0; z-index:90; background:#000; color:#fff; display:flex; flex-direction:column; }
+.phgal { position:fixed; inset:0; z-index:60; background:var(--bg); display:flex; flex-direction:column; }
+.phgal > .top { flex:none; position:static; padding-top:calc(.7rem + env(safe-area-inset-top)); }
+.phgbody { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:12px 12px calc(16px + env(safe-area-inset-bottom)); }
+.pgmap td { padding:.25rem; }
+.pgmap .pgc { position:relative; width:100%; min-width:64px; min-height:62px; margin:0; border:2px solid transparent; text-align:center; background-size:cover; background-position:center; overflow:hidden; }
+.pgmap .pgc.has { color:#fff; text-shadow:0 1px 3px rgba(0,0,0,.9); border-color:#2e9d57; }
+.pgmap .pgc.has::before { content:''; position:absolute; inset:0; background:linear-gradient(rgba(0,0,0,.15), rgba(0,0,0,.55)); }
+.pgmap .pgc > * { position:relative; }
+.pgmap .pgc.has span { color:#fff; }
+.pgmap .pgc i { display:block; font-style:normal; font-size:.72rem; font-weight:800; }
+.pgmap .pgc.sel { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+.pgmap .pgc.out { opacity:.45; }
+.pggrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(104px, 1fr)); gap:10px; margin-top:10px; }
+.pgitem { display:flex; flex-direction:column; padding:0; margin:0; min-height:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); text-align:left; }
+.pgitem img { width:100%; aspect-ratio:4 / 3; object-fit:cover; display:block; background:#ddd; }
+.pgitem span { font-size:.75rem; padding:4px 6px; font-weight:500; }
+.phviewer { position:fixed; inset:0; z-index:90; background:#000; color:#fff; display:flex; flex-direction:column; touch-action:none; overscroll-behavior:none; }
 .phvtop { flex:none; display:flex; align-items:center; gap:10px; padding:calc(10px + env(safe-area-inset-top)) 12px 10px; background:#111; }
 .phvtop .phvcount { font-weight:800; flex:1; }
 .phvtop button { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.35); color:#fff; }
-.phvstage { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:pan-y pinch-zoom; user-select:none; -webkit-user-select:none; }
+.phvstage { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none; }
 .phvstage img { max-width:100%; max-height:100%; object-fit:contain; will-change:transform; }
 .phvnav { position:absolute; top:50%; transform:translateY(-50%); width:44px; height:64px; min-height:0; padding:0; border:0; border-radius:12px; background:rgba(0,0,0,.45); color:#fff; font-size:2.2rem; line-height:1; }
 .phvnav.prev { left:8px; } .phvnav.next { right:8px; }
@@ -3613,7 +3629,7 @@ async function wirePhotosCard(t) {
   }).join('') : '<p class="small muted" style="margin:0">No assessment dates yet – use Quick Photos above.</p>';
   card.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => openPhotoSetup(t, b.dataset.photo));
   card.querySelectorAll('[data-phzip]').forEach(b => b.onclick = () => exportPhotosZip(t, b.dataset.phzip, b));
-  card.querySelectorAll('[data-phview]').forEach(b => b.onclick = async () => { const d = b.dataset.phview, list = phSorted(t, d, await photosOfDay(t, d)); if (list.length) openPhotoViewer(t, d, list, null, null, () => wirePhotosCard(t)); });
+  card.querySelectorAll('[data-phview]').forEach(b => b.onclick = () => openPhotoGallery(t, b.dataset.phview));
   card.querySelectorAll('[data-phfree]').forEach(b => b.onclick = async () => {
     const d = b.dataset.phfree, rs = (await photosOfDay(t, d)).filter(r => r.exported);
     if (!rs.length || !confirm(`Delete the ${rs.length} exported photo${rs.length === 1 ? '' : 's'} of ${dmy(d)} from this phone?\n\nOnly do this once the ZIP is safely saved (Files, OneDrive, computer…). Photos not exported yet are kept.`)) return;
@@ -3668,6 +3684,14 @@ function openPhotoSetup(t, date) {
   };
 }
 
+const ovDepth = () => (history.state && history.state.ovDepth) || 0; // full-screen screens stacked on top of each other: Back closes only the top one
+const scrollLock = (() => { // freezes the page behind a full-screen screen (also on iPhone, where hiding the overflow alone isn't enough)
+  let n = 0, y = 0;
+  return {
+    on() { if (n++ === 0) { y = window.scrollY; Object.assign(document.body.style, { position: 'fixed', top: -y + 'px', left: '0', right: '0', overflow: 'hidden' }); } },
+    off() { if (n > 0 && --n === 0) { Object.assign(document.body.style, { position: '', top: '', left: '', right: '', overflow: '' }); window.scrollTo(0, y); } },
+  };
+})();
 const phSorted = (t, date, rs) => { const order = new Map(phPlots(t, phDay(t, date)).map((p, i) => [p.plot, i])); return rs.slice().sort((x, y) => (order.get(x.plot) ?? 1e9) - (order.get(y.plot) ?? 1e9) || x.plot - y.plot || x.seq - y.seq); };
 function openPhotoViewer(t, date, list, startId, onDelete, onClose) { // full-screen photos of a date: swipe (or ‹ ›) between them, each with its plot, rep and treatment
   let i = Math.max(0, list.findIndex(r => r.id === startId));
@@ -3677,7 +3701,8 @@ function openPhotoViewer(t, date, list, startId, onDelete, onClose) { // full-sc
     <div class="phvstage" id="pvs"><img id="pvi" alt="" draggable="false"><button type="button" class="phvnav prev" data-v="prev" aria-label="Previous photo">‹</button><button type="button" class="phvnav next" data-v="next" aria-label="Next photo">›</button></div>
     <div class="phvcap"><div style="flex:1;min-width:0"><div class="phvplot" id="pvp"></div><div class="camvname"><b id="pvn"></b><span id="pvm"></span></div></div>
       <button type="button" class="ibtn camdel" data-v="del" title="Delete this photo" aria-label="Delete this photo">${ICON.trash}</button></div>`;
-  document.body.appendChild(box);
+  document.body.appendChild(box); scrollLock.on();
+  box.addEventListener('touchmove', e => e.preventDefault(), { passive: false }); // swipes stay inside the viewer – nothing behind it moves
   const q = s => box.querySelector(s), img = q('#pvi'), stage = q('#pvs');
   function show(dir) {
     const r = list[i];
@@ -3698,7 +3723,7 @@ function openPhotoViewer(t, date, list, startId, onDelete, onClose) { // full-sc
   stage.addEventListener('pointerup', end); stage.addEventListener('pointercancel', end);
   const onKey = e => { if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1); else if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
-  function close() { document.removeEventListener('keydown', onKey); urls.forEach(u => URL.revokeObjectURL(u)); box.remove(); if (onClose) onClose(); }
+  function close() { document.removeEventListener('keydown', onKey); urls.forEach(u => URL.revokeObjectURL(u)); box.remove(); scrollLock.off(); if (onClose) onClose(); }
   box.addEventListener('click', async e => {
     const b = e.target.closest && e.target.closest('button'); if (!b) return;
     const v = b.dataset.v;
@@ -3710,6 +3735,50 @@ function openPhotoViewer(t, date, list, startId, onDelete, onClose) { // full-sc
     }
   });
   show(0);
+}
+
+function openPhotoGallery(t, date) { // the trial's field map with each plot's photos, and the photos underneath
+  const day = phDay(t, date), inDay = new Set(phPlots(t, day).map(p => p.plot));
+  let rs = [], sel = null;
+  const urls = new Map(), thumb = r => { if (!urls.has(r.id)) urls.set(r.id, URL.createObjectURL(r.thumb || r.blob)); return urls.get(r.id); };
+  const box = document.createElement('div'); box.className = 'phgal';
+  box.innerHTML = `<header class="top"><button type="button" class="small" data-g="x">← Back</button><h1>Photos · ${esc(dmy(date))}</h1><span class="pill" id="pg-n"></span></header><div class="phgbody" id="pg-body"><p class="small muted" style="padding:16px">Loading…</p></div>`;
+  document.body.appendChild(box); scrollLock.on();
+  const body = box.querySelector('#pg-body');
+  const keyOf = (si, c) => isCustom(t) ? si * PK + c.plot : c.plot;
+  const plotInfo = key => plots(t).find(p => p.plot === key);
+  function draw() {
+    box.querySelector('#pg-n').textContent = `${rs.length} photo${rs.length === 1 ? '' : 's'}`;
+    const shown = sel == null ? rs : rs.filter(r => r.plot === sel), pi = sel == null ? null : plotInfo(sel);
+    const sets = layoutSets(t).map((st, si) => ({ st, si })).reverse(); // first crop / variety at the bottom, like the field
+    body.innerHTML = `<section class="card"><h2 style="margin-bottom:2px">Field Layout</h2><p class="small muted" style="margin:0 0 8px">Plots with photos show a picture. Tap a plot to see its photos below.</p>
+      ${sets.map(({ st, si }) => `${st.name ? `<div class="setname">${esc(st.name)}</div>` : ''}<div class="scroll"><table class="map pgmap"><tbody>
+        ${st.rows.map(row => `<tr>${row.label ? `<th class="l">${row.label}</th>` : ''}${row.cells.map(c => {
+          if (!c.trt) return `<td><span class="pc buf"><b>${c.plot}</b><span>Buffer</span></span></td>`;
+          const k = keyOf(si, c), mine = rs.filter(r => r.plot === k), last = mine[mine.length - 1];
+          return `<td><button type="button" class="pc pgc ${mine.length ? 'has' : ''} ${sel === k ? 'sel' : ''} ${inDay.has(k) ? '' : 'out'}" data-k="${k}"${last ? ` style="background-image:url('${thumb(last)}')"` : ''}><b>${c.plot}</b><span>T${c.trt}</span>${mine.length ? `<i>📷 ${mine.length}</i>` : ''}</button></td>`;
+        }).join('')}</tr>`).reverse().join('')}
+      </tbody></table></div>`).join('')}</section>
+      <section class="card"><div class="arow"><h2 style="margin:0">${pi ? `Plot ${pn(sel)} <span class="muted" style="font-weight:600;font-size:.9em">· Rep ${pi.rep} · Trt ${pi.trt}${trtName(t, pi.trt) ? ' – ' + esc(trtName(t, pi.trt)) : ''}</span>` : 'All Photos'}</h2>${sel != null ? '<button type="button" class="small" data-g="all">Show All</button>' : ''}</div>
+        ${shown.length ? `<div class="pggrid">${shown.map(r => `<button type="button" class="pgitem" data-id="${r.id}"><img src="${thumb(r)}" alt="" loading="lazy"><span><b>Plot ${pn(r.plot)}</b> · R${r.rep} · T${r.trt}${r.seq > 1 ? ` · ${r.seq}` : ''}</span></button>`).join('')}</div>`
+          : `<p class="small muted" style="margin:10px 0 0">${sel != null ? 'No photos of this plot yet.' : 'No photos for this date yet.'}</p>`}
+        ${sel != null ? `<div class="actions" style="margin:12px 0 0"><button type="button" class="small primary" data-g="shoot">📷 Take a Photo of Plot ${pn(sel)}</button></div>` : ''}</section>`;
+  }
+  async function load() { try { rs = phSorted(t, date, await photosOfDay(t, date)); } catch (e) { rs = []; } draw(); }
+  function close(fromPop) { urls.forEach(u => URL.revokeObjectURL(u)); box.remove(); scrollLock.off(); window.removeEventListener('popstate', onPop); if (fromPop !== true) history.back(); wirePhotosCard(t); }
+  box.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('button'); if (!b) return;
+    if (b.dataset.g === 'x') close();
+    else if (b.dataset.g === 'all') { sel = null; draw(); }
+    else if (b.dataset.k) { const k = +b.dataset.k; sel = sel === k ? null : k; draw(); body.querySelector('.pggrid, .card:last-child').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+    else if (b.dataset.id) { const list = sel == null ? rs.slice() : rs.filter(r => r.plot === sel); openPhotoViewer(t, date, list, b.dataset.id, r => { rs = rs.filter(x => x.id !== r.id); }, () => draw()); }
+    else if (b.dataset.g === 'shoot') { const p = plots(t).find(q => q.plot === sel); if (p) openCamera(t, day, [p], { multi: true, cam: camModeOf() }).then(() => {}); }
+  });
+  const myDepth = ovDepth() + 1; history.pushState({ ovDepth: myDepth }, '', location.href); // the phone's Back button closes the gallery
+  const onPop = () => { if (ovDepth() < myDepth) close(true); };
+  window.addEventListener('popstate', onPop);
+  load();
+  box.refresh = load;
 }
 
 /* the camera screen */
@@ -3728,7 +3797,7 @@ async function openCamera(t, day, walk, opt) {
     <div class="camthumbs" id="cth"></div>
     <div class="camctl"><button type="button" class="camnav" data-c="prev" aria-label="Previous plot">◀</button><button type="button" class="shutter" data-c="shoot" aria-label="Take photo"><span></span></button><button type="button" class="camnav" data-c="next" aria-label="Next plot">▶</button><button type="button" class="camnav" data-c="grid" aria-label="All plots">▦</button></div>
     <input type="file" accept="image/*" capture="environment" id="cfile" hidden>`;
-  document.body.appendChild(ov); document.body.classList.add('locked');
+  document.body.appendChild(ov); document.body.classList.add('locked'); scrollLock.on();
   const q = s => ov.querySelector(s), vid = q('#vid'), file = q('#cfile');
   const plotRecs = p => recs.filter(r => r.plot === p.plot).sort((x, y) => x.seq - y.seq);
   function draw() {
@@ -3797,9 +3866,9 @@ async function openCamera(t, day, walk, opt) {
     box.onclick = e => { const b = e.target.closest && e.target.closest('button'); if (!b) return; if (b.dataset.i) { idx = +b.dataset.i; draw(); } box.remove(); };
   }
   function close() {
-    closed = true; stopStream(); urls.forEach(u => URL.revokeObjectURL(u)); ov.remove(); document.body.classList.remove('locked');
+    closed = true; stopStream(); urls.forEach(u => URL.revokeObjectURL(u)); ov.remove(); document.body.classList.remove('locked'); scrollLock.off();
     document.removeEventListener('visibilitychange', onVis); window.removeEventListener('popstate', onPop);
-    if (location.hash === `#/trial/${t.id}`) viewTrial(t);
+    const gal = document.querySelector('.phgal'); if (gal && gal.refresh) gal.refresh(); else if (location.hash === `#/trial/${t.id}`) viewTrial(t);
   }
   ov.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('button'); if (!b) return;
@@ -3815,8 +3884,8 @@ async function openCamera(t, day, walk, opt) {
   });
   const onVis = () => { if (document.visibilityState === 'hidden') stopStream(); else if (cam === 'fart' && !closed) startStream(); }; // the camera is let go while the app is in the background
   document.addEventListener('visibilitychange', onVis);
-  history.pushState({ cam: 1 }, '', location.href); // the phone's Back button closes the camera
-  const onPop = () => close();
+  const myDepth = ovDepth() + 1; history.pushState({ ovDepth: myDepth }, '', location.href); // the phone's Back button closes the camera
+  const onPop = () => { if (ovDepth() < myDepth) close(); };
   window.addEventListener('popstate', onPop);
   draw(); startStream();
 }
