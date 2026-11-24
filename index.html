@@ -241,6 +241,51 @@ body.locked { overflow:hidden; }
 .locmap svg.lnames { pointer-events:none; }
 #cs-chips .chip { min-height:40px; padding:.2rem .9rem; font-size:.95rem; }
 #cs-chips .chip.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.phrow { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:8px 0; border-top:1px solid var(--line); flex-wrap:wrap; }
+.phrow:first-of-type { border-top:0; }
+.phbtns { display:flex; gap:6px; flex-wrap:wrap; }
+.camov { position:fixed; inset:0; z-index:70; background:#000; color:#fff; display:flex; flex-direction:column; }
+.camtop { flex:none; display:flex; align-items:center; gap:8px; padding:calc(8px + env(safe-area-inset-top)) 10px 8px; background:rgba(0,0,0,.6); }
+.camtop .camtitle { flex:1; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.camtop .seg { margin:0; }
+.camov button { color:inherit; }
+.camtop button.small, .camvbar button { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.35); color:#fff; }
+.camtop .seg.mini { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.45); }
+.camtop .seg.mini button { color:#fff; background:transparent; }
+.camtop .seg.mini button.on { background:#fff; color:#000; }
+.sheet.cmt .chips button, .sheet.cmt .seg button { width:auto; margin:0; }
+.sheet.cmt .seg.mini { display:flex; width:max-content; max-width:100%; }
+.cambar { flex:none; text-align:center; padding:6px 10px; background:#111; line-height:1.25; }
+.cambar .plot-no { font-size:1.4rem; font-weight:800; margin-right:10px; }
+.cambar .plot-meta { color:#ccc; } .cambar .plot-meta b { color:#fff; }
+.cambar .pill { margin-right:8px; }
+.camview { position:relative; flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.camview video, .camview #last { width:100%; height:100%; object-fit:contain; }
+.cammsg { position:absolute; left:16px; right:16px; text-align:center; font-size:1.05rem; line-height:1.4; }
+.cammsg button { margin-top:6px; background:#fff !important; color:#000 !important; }
+.camflash { position:absolute; inset:0; background:#fff; opacity:0; pointer-events:none; }
+.camflash.on { animation:camflash .35s ease-out; }
+@keyframes camflash { from { opacity:.85; } to { opacity:0; } }
+.camthumbs { flex:none; display:flex; gap:8px; overflow-x:auto; padding:8px 10px; min-height:72px; align-items:center; background:#111; }
+.camthumb { position:relative; flex:none; width:64px; height:56px; padding:0; border:2px solid #fff; border-radius:8px; overflow:hidden; background:#222; min-height:0; }
+.camthumb img { width:100%; height:100%; object-fit:cover; display:block; }
+.camthumb i { position:absolute; right:2px; bottom:1px; font-style:normal; font-size:.7rem; font-weight:800; background:rgba(0,0,0,.65); border-radius:5px; padding:0 4px; }
+.camctl { flex:none; display:flex; align-items:center; justify-content:space-around; padding:10px 10px calc(14px + env(safe-area-inset-bottom)); background:#000; }
+.camnav { width:56px; min-height:56px; border-radius:50%; font-size:1.4rem; background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.3); padding:0; }
+.shutter { width:78px; height:78px; min-height:78px; border-radius:50%; border:4px solid #fff; background:transparent; padding:5px; }
+.shutter span { display:block; width:100%; height:100%; border-radius:50%; background:#fff; }
+.shutter.retake span { background:#ffd400; }
+.shutter:active span { transform:scale(.9); }
+.camviewer { position:absolute; inset:0; z-index:2; background:#000; display:flex; flex-direction:column; }
+.camviewer > img { flex:1; min-height:0; width:100%; object-fit:contain; }
+.camvbar { flex:none; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:#111; word-break:break-all; }
+.camgrid .camvbar { padding-top:calc(10px + env(safe-area-inset-top)); }
+.cgrid { flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(96px, 1fr)); gap:8px; padding:10px; align-content:start; }
+.cgcell { position:relative; height:90px; padding:0; border:2px solid #444; border-radius:10px; overflow:hidden; background:#1b1b1b; min-height:0; }
+.cgcell.has { border-color:#2e9d57; } .cgcell.cur { border-color:#ffd400; }
+.cgcell img { width:100%; height:100%; object-fit:cover; display:block; }
+.cgempty { font-size:.75rem; opacity:.6; }
+.cglab { position:absolute; left:0; right:0; bottom:0; font-size:.72rem; font-weight:700; background:rgba(0,0,0,.65); padding:2px 4px; }
 .minimap { width:100%; max-width:440px; height:auto; display:block; border:1px solid var(--line); border-radius:10px; background:#eef3f8; }
 .gpsready { border-radius:10px; padding:.5rem .7rem; font-weight:700; text-align:center; margin-bottom:8px; font-size:.95rem; line-height:1.3; }
 .gpsready.none { background:var(--line); color:var(--muted); }
@@ -1476,6 +1521,7 @@ function viewTrial(t) {
       </section>`;
     }).join('') : `<div class="card empty"><p>No assessment dates yet.</p><a class="btn primary" href="#/trial/${t.id}/a/new">+ New Assessment Date</a></div>`}
 
+    ${photosCardHtml(t, as)}
     ${as.some(a => a.comment) ? `<section class="card"><h2>Trial Comments</h2><p class="small muted" style="margin-bottom:6px">By assessment date. These go at the end of the PDF and into Trial Info in the Excel export.</p>${commentCards(t, as)}</section>` : ''}
     <section class="card">
       <h2>Field Layout</h2>
@@ -1504,6 +1550,7 @@ function viewTrial(t) {
   });
   app.querySelectorAll('[data-cmt]').forEach(b => b.onclick = () => openComment(t, t.assessments.find(x => x.id === b.dataset.cmt), () => viewTrial(t)));
   wireGeoCard(t, () => viewTrial(t));
+  wirePhotosCard(t);
   app.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => shareAssessment(t, t.assessments.find(x => x.id === b.dataset.sh)));
   app.querySelectorAll('[data-lock],[data-unlock]').forEach(b => b.onclick = () => toggleLock(t, t.assessments.find(x => x.id === (b.dataset.lock || b.dataset.unlock)), () => viewTrial(t)));
   app.querySelectorAll('[data-xp]').forEach(b => b.onclick = () => openExport(t, t.assessments.find(x => x.id === b.dataset.xp)));
@@ -1516,13 +1563,13 @@ function viewTrial(t) {
     t.archived = Date.now(); save(); toast('Trial archived'); go('#/');
   };
   document.getElementById('del').onclick = () => {
-    if (!confirm(`Delete trial "${t.trialId}" and all of its assessment data? This cannot be undone.`)) return;
-    dropTrialDrafts(t.id); db.trials = db.trials.filter(x => x.id !== t.id); save(); go('#/');
+    if (!confirm(`Delete trial "${t.trialId}" and all of its assessment data and photos? This cannot be undone.`)) return;
+    photoDelBy('tid', t.id); dropTrialDrafts(t.id); db.trials = db.trials.filter(x => x.id !== t.id); save(); go('#/');
   };
   app.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     const a = t.assessments.find(x => x.id === b.dataset.del);
-    if (!confirm(`Delete the ${dmy(a.date)} assessment and its data?`)) return;
-    dropDraft(`assess:${t.id}:${a.id}`); t.assessments = t.assessments.filter(x => x.id !== a.id); t.updated = Date.now(); save(); viewTrial(t);
+    if (!confirm(`Delete the ${dmy(a.date)} assessment and its data and photos?`)) return;
+    photoDelBy('aid', a.id); dropDraft(`assess:${t.id}:${a.id}`); t.assessments = t.assessments.filter(x => x.id !== a.id); t.updated = Date.now(); save(); viewTrial(t);
   });
 }
 
@@ -3458,6 +3505,266 @@ async function locationPdf(t) {
   out += `xref\n0 ${total + 1}\n0000000000 65535 f \n` + offs.slice(1).map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
   out += `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return { blob: new Blob([Uint8Array.from(out, c => c.charCodeAt(0))], { type: 'application/pdf' }), name: `${t.trialId.replace(/[^\w.-]+/g, '_')}_Trial_Location.pdf`, mapsOk: !!(ov && ov.ok && cu && cu.ok) };
+}
+
+/* ---------- plot photos: taken plot by plot for an assessment date, kept on this device only (IndexedDB – not in backups or shared files), exported as a ZIP ---------- */
+let photoDbP = null;
+function photoDb() {
+  if (!photoDbP) photoDbP = new Promise((res, rej) => {
+    if (!window.indexedDB) { rej(new Error('This browser cannot store photos.')); return; }
+    const r = indexedDB.open('fart-photos', 1);
+    r.onupgradeneeded = () => { const s = r.result.createObjectStore('photos', { keyPath: 'id' }); s.createIndex('aid', 'aid'); s.createIndex('tid', 'tid'); };
+    r.onsuccess = () => res(r.result); r.onerror = () => { photoDbP = null; rej(r.error); };
+  });
+  return photoDbP;
+}
+const idbReq = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const photoStoreOf = async mode => (await photoDb()).transaction('photos', mode).objectStore('photos');
+const photosOf = async (key, val) => idbReq((await photoStoreOf('readonly')).index(key).getAll(val)); // key = 'aid' (a date) or 'tid' (a trial)
+const photoPut = async rec => idbReq((await photoStoreOf('readwrite')).put(rec));
+const photoDel = async ids => { if (!ids.length) return; const st = await photoStoreOf('readwrite'); await Promise.all(ids.map(id => idbReq(st.delete(id)))); };
+const photoDelBy = (key, val) => photosOf(key, val).then(rs => photoDel(rs.map(r => r.id))).catch(() => {});
+function photoName(t, a, r) { // e.g. GB26D2C026H-SMW02_24-11-2026_P101_R1_T3.jpg, then _2, _3 for extra photos of the plot
+  const set = multiSet(t) ? '_' + cropSetName(t, r.set).replace(/[^\w-]+/g, '') : '';
+  const ext = /png/.test(r.type) ? 'png' : /hei[cf]/.test(r.type) ? 'heic' : 'jpg';
+  return `${t.trialId.replace(/[^\w.-]+/g, '_')}_${dmy(a.date).replace(/\//g, '-')}_P${pn(r.plot)}${set}_R${r.rep}_T${r.trt}${r.seq > 1 ? '_' + r.seq : ''}.${ext}`;
+}
+async function photoThumb(blob) { // a small copy for the screens, so the full photos are never all opened at once
+  const url = URL.createObjectURL(blob);
+  try { const im = new Image(); im.src = url; await im.decode(); const k = 360 / Math.max(im.naturalWidth, im.naturalHeight), cv = document.createElement('canvas');
+    cv.width = Math.max(1, Math.round(im.naturalWidth * k)); cv.height = Math.max(1, Math.round(im.naturalHeight * k)); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+    return await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.8)); }
+  catch (e) { return null; } finally { URL.revokeObjectURL(url); }
+}
+async function photoSave(t, a, p, blob, multi) { // the photo is stored exactly as the camera made it (full resolution)
+  const have = (await photosOf('aid', a.id)).filter(r => r.plot === p.plot);
+  if (!multi && have.length) await photoDel(have.map(r => r.id)); // one per plot: a new photo replaces the old one
+  const rec = { id: uid() + uid(), tid: t.id, aid: a.id, plot: p.plot, rep: p.rep, trt: p.trt, set: p.set || 0, seq: multi ? Math.max(0, ...have.map(r => r.seq)) + 1 : 1,
+    ts: Date.now(), type: blob.type || 'image/jpeg', size: blob.size, crc: crc32(new Uint8Array(await blob.arrayBuffer())), blob, thumb: await photoThumb(blob) };
+  await photoPut(rec);
+  return rec;
+}
+const fmtMB = n => n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : Math.max(0.1, n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + ' MB';
+const isAppleDevice = () => /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const camModeOf = () => db.settings.camMode || (isAppleDevice() || !window.ImageCapture ? 'phone' : 'fart'); // iPhone: the phone's own camera (full resolution); Android: FART's camera (also full resolution there)
+
+/* the Photos card on the trial page: one row per assessment date */
+function photosCardHtml(t, as) {
+  return `<section class="card" id="ph-card"><h2>📷 Photos</h2>
+    <p class="small muted" style="margin:0 0 8px">Take photos plot by plot for an assessment date. They are kept on this phone only – not in backups or shared files – so export them as a ZIP.</p>
+    ${as.length ? as.map(a => `<div class="phrow"><div style="min-width:0"><b>${esc(dmy(a.date))}</b><div class="small muted" data-phc="${a.id}">…</div></div>
+      <span class="phbtns"><button type="button" class="small primary" data-photo="${a.id}">📷 Take Photos</button><button type="button" class="small" data-phzip="${a.id}" disabled>Export ZIP</button><button type="button" class="small" data-phfree="${a.id}" hidden>Free Up Space</button></span></div>`).join('')
+      : '<p class="small muted" style="margin:0">Add an assessment date first.</p>'}
+    <p class="small muted" id="ph-space" style="margin:8px 0 0"></p></section>`;
+}
+async function wirePhotosCard(t) {
+  const card = document.getElementById('ph-card'); if (!card) return;
+  card.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => openPhotoSetup(t, t.assessments.find(x => x.id === b.dataset.photo)));
+  card.querySelectorAll('[data-phzip]').forEach(b => b.onclick = () => exportPhotosZip(t, t.assessments.find(x => x.id === b.dataset.phzip), b));
+  card.querySelectorAll('[data-phfree]').forEach(b => b.onclick = async () => {
+    const a = t.assessments.find(x => x.id === b.dataset.phfree), rs = (await photosOf('aid', a.id)).filter(r => r.exported);
+    if (!rs.length || !confirm(`Delete the ${rs.length} exported photo${rs.length === 1 ? '' : 's'} of ${dmy(a.date)} from this phone?\n\nOnly do this once the ZIP is safely saved (Files, OneDrive, computer…). Photos not exported yet are kept.`)) return;
+    await photoDel(rs.map(r => r.id)); toast('Space freed'); wirePhotosCard(t);
+  });
+  let all = [];
+  try { all = await photosOf('tid', t.id); } catch (e) { card.querySelector('#ph-space').textContent = 'Photos cannot be stored in this browser.'; return; }
+  t.assessments.forEach(a => {
+    const rs = all.filter(r => r.aid === a.id), el = card.querySelector(`[data-phc="${a.id}"]`); if (!el) return;
+    const plotsN = new Set(rs.map(r => r.plot)).size, notEx = rs.filter(r => !r.exported).length;
+    el.textContent = rs.length ? `${rs.length} photo${rs.length === 1 ? '' : 's'} · ${plotsN} plot${plotsN === 1 ? '' : 's'} · ${fmtMB(rs.reduce((s, r) => s + r.size, 0))}${notEx ? ` · ${notEx} not exported yet` : ' · all exported'}` : 'No photos yet';
+    card.querySelector(`[data-phzip="${a.id}"]`).disabled = !rs.length;
+    card.querySelector(`[data-phfree="${a.id}"]`).hidden = !rs.some(r => r.exported);
+  });
+  const sp = card.querySelector('#ph-space'), notEx = all.filter(r => !r.exported).length;
+  sp.textContent = all.length ? `${all.length} photo${all.length === 1 ? '' : 's'} of this trial on this phone (${fmtMB(all.reduce((s, r) => s + r.size, 0))})${notEx ? ` – ${notEx} not exported yet.` : '.'}` : '';
+  if (navigator.storage && navigator.storage.estimate) navigator.storage.estimate().then(e => { if (e && e.quota) sp.textContent += `${sp.textContent ? ' ' : ''}Space left for the app: about ${fmtMB(Math.max(0, e.quota - (e.usage || 0)))}.`; }).catch(() => {});
+}
+
+/* before starting: which reps, one or several photos per plot, which camera */
+function openPhotoSetup(t, a) {
+  const reps = range(t.reps), sel = new Set((a.photoReps && a.photoReps.length ? a.photoReps : [1]).filter(r => r <= t.reps));
+  let multi = !!db.settings.photoMulti, cam = camModeOf();
+  const ov = document.createElement('div'); ov.className = 'modal cmt-ov';
+  const draw = () => {
+    ov.innerHTML = `<div class="sheet cmt" role="dialog" aria-label="Take photos">
+      <h3 style="margin:0 0 2px">📷 Photos · ${esc(dmy(a.date))}</h3>
+      <p class="small muted" style="margin:0 0 10px">${esc(t.trialId)}. You walk the plots in the same order as assessing.</p>
+      <b class="small">Reps to Photograph</b>
+      <div class="chips" style="margin:6px 0 4px">${reps.map(r => `<button type="button" class="chip ${sel.has(r) ? 'on' : ''}" data-rep="${r}">Rep ${r}</button>`).join('')}<button type="button" class="chip" data-rep="all">All</button></div>
+      <p class="small muted" style="margin:0 0 10px">${phWalk(t, a, [...sel]).length} plots.</p>
+      <b class="small">Photos per Plot</b>
+      <div class="seg mini" style="margin:6px 0 10px"><button type="button" data-multi="0" class="${multi ? '' : 'on'}">One</button><button type="button" data-multi="1" class="${multi ? 'on' : ''}">Multiple</button></div>
+      <b class="small">Camera</b>
+      <div class="seg mini" style="margin:6px 0 4px"><button type="button" data-cam="phone" class="${cam === 'phone' ? 'on' : ''}">Phone Camera</button><button type="button" data-cam="fart" class="${cam === 'fart' ? 'on' : ''}">FART Camera</button></div>
+      <p class="small muted" style="margin:0 0 12px">${cam === 'phone' ? 'Opens the phone\'s own camera for each photo – full resolution and full quality; you come straight back to FART.' : isAppleDevice() || !window.ImageCapture ? 'Stays inside FART – quicker, but on iPhone it is limited to about 8 MP. Use Phone Camera for full resolution.' : 'Stays inside FART, at the camera\'s full resolution.'}</p>
+      <div class="cal-foot"><button type="button" class="small" data-x="1">Cancel</button><button type="button" class="primary" data-go="1" ${sel.size ? '' : 'disabled'}>Start</button></div></div>`;
+  };
+  draw(); document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.onclick = e => {
+    if (e.target === ov) return close();
+    const b = e.target.closest && e.target.closest('button'); if (!b) return;
+    if (b.dataset.rep) { if (b.dataset.rep === 'all') reps.forEach(r => sel.add(r)); else { const r = +b.dataset.rep; sel.has(r) ? sel.delete(r) : sel.add(r); } draw(); }
+    else if (b.dataset.multi) { multi = b.dataset.multi === '1'; draw(); }
+    else if (b.dataset.cam) { cam = b.dataset.cam; draw(); }
+    else if (b.dataset.x) close();
+    else if (b.dataset.go) {
+      a.photoReps = [...sel].sort((x, y) => x - y); db.settings.photoMulti = multi; db.settings.camMode = cam; t.updated = Date.now(); save();
+      close(); openCamera(t, a, { reps: a.photoReps, multi, cam });
+    }
+  };
+}
+const phWalk = (t, a, reps) => walkOrder(t, a).filter(p => reps.includes(p.rep)); // the plots to photograph, in walking order
+
+/* the camera screen */
+async function openCamera(t, a, opt) {
+  let walk = phWalk(t, a, opt.reps), idx = 0, multi = opt.multi, cam = opt.cam, recs = [], stream = null, ic = null, busy = false, closed = false;
+  if (!walk.length) { toast('No plots to photograph for the reps chosen'); return; }
+  try { recs = await photosOf('aid', a.id); } catch (e) { alert('Photos cannot be stored in this browser: ' + e.message); return; }
+  { const first = walk.findIndex(p => !recs.some(r => r.plot === p.plot)); idx = first < 0 ? 0 : first; } // start at the first plot without a photo
+  const urls = new Map(); const urlOf = (r, full) => { const k = r.id + (full ? 'f' : 't'); if (!urls.has(k)) urls.set(k, URL.createObjectURL(full || !r.thumb ? r.blob : r.thumb)); return urls.get(k); };
+  const ov = document.createElement('div'); ov.className = 'camov';
+  ov.innerHTML = `<div class="camtop"><button type="button" class="small" data-c="done">← Done</button><span class="camtitle">📷 ${esc(dmy(a.date))}</span>
+      <div class="seg mini"><button type="button" data-c="one">One</button><button type="button" data-c="multi">Multiple</button></div></div>
+    <div class="cambar" id="cb"></div>
+    <div class="camview" id="cv"><video id="vid" playsinline muted autoplay hidden></video><img id="last" alt="" hidden><div class="cammsg" id="cmsg"></div><div class="camflash" id="cflash"></div></div>
+    <div class="camthumbs" id="cth"></div>
+    <div class="camctl"><button type="button" class="camnav" data-c="prev" aria-label="Previous plot">◀</button><button type="button" class="shutter" data-c="shoot" aria-label="Take photo"><span></span></button><button type="button" class="camnav" data-c="next" aria-label="Next plot">▶</button><button type="button" class="camnav" data-c="grid" aria-label="All plots">▦</button></div>
+    <input type="file" accept="image/*" capture="environment" id="cfile" hidden>`;
+  document.body.appendChild(ov); document.body.classList.add('locked');
+  const q = s => ov.querySelector(s), vid = q('#vid'), file = q('#cfile');
+  const plotRecs = p => recs.filter(r => r.plot === p.plot).sort((x, y) => x.seq - y.seq);
+  function draw() {
+    const p = walk[idx], mine = plotRecs(p), done = walk.filter(w => recs.some(r => r.plot === w.plot)).length;
+    q('[data-c="one"]').classList.toggle('on', !multi); q('[data-c="multi"]').classList.toggle('on', multi);
+    q('#cb').innerHTML = `<span class="plot-no">Plot ${pn(p.plot)}</span>${multiSet(t) ? `<span class="pill">${esc(setName(t, p.set))}</span>` : ''}<span class="plot-meta">Rep <b>${p.rep}</b>${db.settings.showTrt ? ` · <b>${esc(trtLabel(t, p.trt))}</b>` : ''}</span>
+      <div class="small">${idx + 1} of ${walk.length} · ${done} plot${done === 1 ? '' : 's'} photographed · ${mine.length ? `<b>${mine.length} photo${mine.length === 1 ? '' : 's'} here ✓</b>` : 'no photo here yet'}</div>`;
+    q('#cth').innerHTML = mine.length ? mine.map(r => `<button type="button" class="camthumb" data-view="${r.id}"><img src="${urlOf(r)}" alt="Photo ${r.seq}"><i>${r.seq}</i></button>`).join('') : '<span class="small" style="opacity:.7">Photos of this plot appear here – tap one to view or delete it.</span>';
+    q('[data-c="prev"]').disabled = idx === 0; q('[data-c="next"]').disabled = idx === walk.length - 1;
+    q('.shutter').classList.toggle('retake', !multi && mine.length > 0); q('.shutter').setAttribute('aria-label', !multi && mine.length ? 'Retake photo' : 'Take photo');
+    const last = q('#last');
+    if (cam === 'phone') { vid.hidden = true; last.hidden = !mine.length; if (mine.length) last.src = urlOf(mine[mine.length - 1]); q('#cmsg').innerHTML = mine.length ? '' : `<b>Plot ${pn(p.plot)} · Rep ${p.rep}</b><br>Tap the button below to open the camera.`; }
+  }
+  async function startStream() {
+    if (cam !== 'fart' || stream) return;
+    q('#cmsg').textContent = 'Starting the camera…';
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 4096 }, height: { ideal: 3072 } }, audio: false });
+      if (closed) { stopStream(); return; }
+      vid.srcObject = stream; vid.hidden = false; q('#last').hidden = true; q('#cmsg').textContent = ''; await vid.play().catch(() => {});
+      ic = window.ImageCapture ? new ImageCapture(stream.getVideoTracks()[0]) : null;
+    } catch (e) { stream = null; q('#cmsg').innerHTML = `The FART camera could not start (${esc(e.name || e.message || 'blocked')}).<br>Allow camera access for this app, or switch to the Phone Camera.<br><br><button type="button" class="small" data-c="usephone">Use the Phone Camera</button>`; }
+  }
+  function stopStream() { if (stream) stream.getTracks().forEach(tr => tr.stop()); stream = null; ic = null; vid.srcObject = null; }
+  async function grab() { // full resolution where the browser allows it (Android); otherwise the sharpest frame of the live picture
+    if (ic) { try { const caps = await ic.getPhotoCapabilities(); return await ic.takePhoto(caps && caps.imageWidth ? { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max } : {}); } catch (e) { try { return await ic.takePhoto(); } catch (e2) {} } }
+    const cv = document.createElement('canvas'); cv.width = vid.videoWidth; cv.height = vid.videoHeight; if (!cv.width) throw new Error('The camera is not ready yet');
+    cv.getContext('2d').drawImage(vid, 0, 0); return await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('Could not take the photo')), 'image/jpeg', 0.95));
+  }
+  async function keep(blob) { // store the photo, then (one per plot) move on to the next plot that needs one
+    const p = walk[idx];
+    q('#cmsg').textContent = 'Saving…';
+    try {
+      const rec = await photoSave(t, a, p, blob, multi);
+      if (!multi) recs = recs.filter(r => r.plot !== p.plot);
+      recs.push(rec); q('#cmsg').textContent = '';
+      const fl = q('#cflash'); fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+      if (!multi) {
+        const nx = walk.findIndex((w, i) => i > idx && !recs.some(r => r.plot === w.plot));
+        if (nx >= 0) { toast(`Saved – Plot ${pn(walk[nx].plot)} next`); idx = nx; }
+        else if (idx < walk.length - 1) { idx++; toast('Saved'); }
+        else { toast('Saved – every plot has a photo'); }
+      } else toast(`Saved – photo ${rec.seq} of Plot ${pn(p.plot)}`);
+      draw();
+    } catch (e) { q('#cmsg').textContent = ''; alert('The photo could not be saved: ' + (e.message || e) + (/quota/i.test(String(e && e.name)) ? '\n\nThe phone is out of space for the app. Export photos and use Free Up Space.' : '')); }
+  }
+  async function shoot() {
+    if (busy) return;
+    const p = walk[idx], mine = plotRecs(p);
+    if (!multi && mine.length > 1 && !confirm(`Plot ${pn(p.plot)} has ${mine.length} photos. Replace them all with one new photo?`)) return;
+    if (cam === 'phone') { file.value = ''; file.click(); return; }
+    busy = true; try { await keep(await grab()); } catch (e) { toast(e.message || 'Could not take the photo'); } finally { busy = false; }
+  }
+  file.onchange = async () => { const f = file.files && file.files[0]; if (f) { busy = true; try { await keep(f); } finally { busy = false; } } };
+  function view(id) {
+    const r = recs.find(x => x.id === id); if (!r) return;
+    const box = document.createElement('div'); box.className = 'camviewer';
+    box.innerHTML = `<img src="${urlOf(r, true)}" alt=""><div class="camvbar"><span class="small">${esc(photoName(t, a, r))}<br>${fmtMB(r.size)} · ${new Date(r.ts).toLocaleTimeString('en-GB')}</span><span style="display:flex;gap:8px"><button type="button" class="small danger" data-v="del">Delete</button><button type="button" class="small" data-v="x">Close</button></span></div>`;
+    ov.appendChild(box);
+    box.onclick = async e => { const b = e.target.closest && e.target.closest('button'); if (!b) return;
+      if (b.dataset.v === 'del') { if (!confirm('Delete this photo?')) return; await photoDel([r.id]); recs = recs.filter(x => x.id !== r.id); }
+      box.remove(); draw(); };
+  }
+  function grid() {
+    const box = document.createElement('div'); box.className = 'camviewer camgrid';
+    box.innerHTML = `<div class="camvbar"><b>All plots · ${walk.filter(w => recs.some(r => r.plot === w.plot)).length} of ${walk.length} photographed</b><button type="button" class="small" data-g="x">Close</button></div>
+      <div class="cgrid">${walk.map((w, i) => { const m = plotRecs(w); return `<button type="button" class="cgcell ${m.length ? 'has' : ''} ${i === idx ? 'cur' : ''}" data-i="${i}">${m.length ? `<img src="${urlOf(m[m.length - 1])}" alt="">` : '<span class="cgempty">No photo</span>'}<span class="cglab">${pn(w.plot)} · R${w.rep}${m.length > 1 ? ` · ${m.length}` : ''}</span></button>`; }).join('')}</div>`;
+    ov.appendChild(box);
+    box.onclick = e => { const b = e.target.closest && e.target.closest('button'); if (!b) return; if (b.dataset.i) { idx = +b.dataset.i; draw(); } box.remove(); };
+  }
+  function close() {
+    closed = true; stopStream(); urls.forEach(u => URL.revokeObjectURL(u)); ov.remove(); document.body.classList.remove('locked');
+    document.removeEventListener('visibilitychange', onVis); window.removeEventListener('popstate', onPop);
+    if (location.hash === `#/trial/${t.id}`) viewTrial(t);
+  }
+  ov.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('button'); if (!b) return;
+    const c = b.dataset.c;
+    if (b.dataset.view) view(b.dataset.view);
+    else if (c === 'shoot') shoot();
+    else if (c === 'prev' && idx > 0) { idx--; draw(); }
+    else if (c === 'next' && idx < walk.length - 1) { idx++; draw(); }
+    else if (c === 'grid') grid();
+    else if (c === 'one' || c === 'multi') { multi = c === 'multi'; db.settings.photoMulti = multi; persistQuiet(); draw(); }
+    else if (c === 'usephone') { cam = 'phone'; db.settings.camMode = 'phone'; persistQuiet(); q('#cmsg').textContent = ''; draw(); }
+    else if (c === 'done') history.back();
+  });
+  const onVis = () => { if (document.visibilityState === 'hidden') stopStream(); else if (cam === 'fart' && !closed) startStream(); }; // the camera is let go while the app is in the background
+  document.addEventListener('visibilitychange', onVis);
+  history.pushState({ cam: 1 }, '', location.href); // the phone's Back button closes the camera
+  const onPop = () => close();
+  window.addEventListener('popstate', onPop);
+  draw(); startStream();
+}
+
+/* ZIP of a date's photos (named as agreed) and a photo list; the photos are referenced, not copied, so large sets don't fill the phone's memory */
+function zipOfBlobs(entries) {
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  const dos = ts => { const d = new Date(ts); return [(d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate()]; };
+  entries.forEach(f => {
+    const name = enc.encode(f.name), [tm, dt] = dos(f.ts || Date.now());
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, tm, true); lh.setUint16(12, dt, true);
+    lh.setUint32(14, f.crc, true); lh.setUint32(18, f.size, true); lh.setUint32(22, f.size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), name, f.blob);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, tm, true); ch.setUint16(14, dt, true);
+    ch.setUint32(16, f.crc, true); ch.setUint32(20, f.size, true); ch.setUint32(24, f.size, true); ch.setUint16(28, name.length, true); ch.setUint32(42, offset, true);
+    central.push(new Uint8Array(ch.buffer), name);
+    offset += 30 + name.length + f.size;
+  });
+  const size = central.reduce((s, p) => s + p.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true); end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+async function exportPhotosZip(t, a, btn) {
+  let rs; try { rs = await photosOf('aid', a.id); } catch (e) { alert(e.message); return; }
+  if (!rs.length) { toast('No photos for this date yet'); return; }
+  const order = new Map(walkOrder(t, a).map((p, i) => [p.plot, i]));
+  rs.sort((x, y) => (order.get(x.plot) ?? 1e9) - (order.get(y.plot) ?? 1e9) || x.plot - y.plot || x.seq - y.seq);
+  if (btn) { btn.disabled = true; btn.textContent = 'Making ZIP…'; }
+  try {
+    const ms = multiSet(t), hhmm = ts => new Date(ts).toLocaleTimeString('en-GB'), dd = ts => dmy(new Date(ts - new Date(ts).getTimezoneOffset() * 6e4).toISOString().slice(0, 10));
+    const csvCell = v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v);
+    const rows = [['File', 'Trial ID', 'Date', 'Time', 'Plot', 'Rep', 'Trt', ...(ms ? ['Crop/Variety'] : [])], ...rs.map(r => [photoName(t, a, r), t.trialId, dd(r.ts), hhmm(r.ts), pn(r.plot), r.rep, r.trt, ...(ms ? [cropSetName(t, r.set)] : [])])];
+    const csv = new TextEncoder().encode('﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n');
+    const entries = [...rs.map(r => ({ name: photoName(t, a, r), blob: r.blob, crc: r.crc, size: r.size, ts: r.ts })), { name: 'Photo list.csv', blob: new Blob([csv]), crc: crc32(csv), size: csv.length, ts: Date.now() }];
+    const zip = zipOfBlobs(entries), name = `${t.trialId.replace(/[^\w.-]+/g, '_')}_Photos_${dmy(a.date).replace(/\//g, '-')}.zip`;
+    downloadMany([{ blob: zip, name }]);
+    const now = Date.now(); for (const r of rs) if (!r.exported) { r.exported = now; await photoPut(r); }
+    toast(`ZIP ready – ${rs.length} photo${rs.length === 1 ? '' : 's'} (${fmtMB(zip.size)})`);
+  } catch (e) { alert('Could not make the ZIP: ' + (e.message || e)); }
+  finally { wirePhotosCard(t); if (btn) btn.textContent = 'Export ZIP'; }
 }
 
 /* ---------- export chooser ---------- */
