@@ -3185,7 +3185,7 @@ function viewLocation(t) {
     btn.disabled = true; btn.textContent = 'Making the PDF (loading the maps)…';
     try {
       const r = await locationPdf(t);
-      downloadMany([{ blob: r.blob, name: r.name }]);
+      offerFile(r.blob, r.name, 'Location sheet (PDF)');
       if (msg) msg.textContent = r.mapsOk ? '' : 'The satellite images could not be loaded (no internet?), so the maps show only the outline. Export again with a connection to include them.';
     } catch (e) { alert('Could not make the location sheet: ' + e.message); }
     finally { btn.disabled = false; btn.textContent = 'Export Location Sheet (PDF)'; }
@@ -3967,7 +3967,9 @@ async function buildPhotoPptx(t, date, rs, progress) {
   const slides = [], media = [];
   // 1. title slide
   { let x = noIds(txt('ppt/slides/slide1.xml'));
-    x = setText(x, spOf(x, /type="ctrTitle"/), [t.trialId, crops, pests].filter(Boolean));
+    { const sp = spOf(x, /type="ctrTitle"/), rpr = firstRPr(sp), small = rpr.replace(/<a:rPr/, '<a:rPr sz="3200"'); // the trial ID, then the crop and pests a little smaller, each on its own line
+      const paras = [`<a:p><a:r>${rpr}<a:t>${xmlEsc(t.trialId)}</a:t></a:r></a:p>`, ...[crops, pests].filter(Boolean).map(l => `<a:p><a:r>${small}<a:t>${xmlEsc(l)}</a:t></a:r></a:p>`)].join('');
+      x = x.replace(sp, sp.replace(/(<p:txBody>[\s\S]*?(?:<a:lstStyle\/>|<\/a:lstStyle>))[\s\S]*<\/p:txBody>/, `$1${paras}</p:txBody>`)); }
     x = setText(x, spOf(x, /<a:t>Date Taken<\/a:t>/), ['', dateTaken]);
     x = setText(x, spOf(x, /type="subTitle"/), [operator]);
     slides.push({ xml: x, rels: txt('ppt/slides/_rels/slide1.xml.rels') }); }
@@ -4022,9 +4024,12 @@ async function buildPhotoPptx(t, date, rs, progress) {
   return zipOfBlobs(names.map(n => ({ name: n, blob: new Blob([files[n]]), crc: crc32(files[n]), size: files[n].length, ts: Date.now() })));
 }
 
+const phZipMade = {}; // ZIPs made this session, reused while the photos of the date are the same
 async function exportPhotosZip(t, date, btn) {
   let rs; try { rs = await photosOfDay(t, date); } catch (e) { alert(e.message); return; }
   if (!rs.length) { toast('No photos for this date yet'); return; }
+  const key = t.id + '|' + date, sig = rs.map(r => r.id).sort().join(',') + '|' + t.trialId;
+  if (phZipMade[key] && phZipMade[key].sig === sig) { offerFile(phZipMade[key].blob, phZipMade[key].name, phZipMade[key].info); return; }
   const order = new Map(phPlots(t, phDay(t, date)).map((p, i) => [p.plot, i]));
   rs.sort((x, y) => (order.get(x.plot) ?? 1e9) - (order.get(y.plot) ?? 1e9) || x.plot - y.plot || x.seq - y.seq);
   if (btn) { btn.disabled = true; btn.textContent = 'Making ZIP…'; }
@@ -4042,9 +4047,10 @@ async function exportPhotosZip(t, date, btn) {
     } catch (e) { toast('The presentation could not be made on this phone – the ZIP has the photos only'); }
     if (btn) btn.textContent = 'Making ZIP…';
     const zip = zipOfBlobs(entries), name = base + '.zip';
-    downloadMany([{ blob: zip, name }]);
+    const info = `${rs.length} photo${rs.length === 1 ? '' : 's'}${entries.some(e => e.name.endsWith('.pptx')) ? ' + presentation' : ''} + photo list`;
+    phZipMade[key] = { sig, blob: zip, name, info };
     const now = Date.now(); for (const r of rs) if (!r.exported) { r.exported = now; await photoPut(r); }
-    toast(`ZIP ready – ${rs.length} photo${rs.length === 1 ? '' : 's'} (${fmtMB(zip.size)})`);
+    offerFile(zip, name, info);
   } catch (e) { alert('Could not make the ZIP: ' + (e.message || e)); }
   finally { wirePhotosCard(t); if (btn) btn.textContent = 'Export ZIP'; }
 }
@@ -4140,6 +4146,23 @@ function openExport(t, a) {
       if (k === 'xlsx' || k === 'both') files.push(excelFile(t, a));
       downloadMany(files); toast(files.length > 1 ? 'PDF and Excel exported' : files[0].name.endsWith('.pdf') ? 'PDF exported' : 'Excel file exported');
     } catch (err) { alert('Sorry, the export failed: ' + err.message); }
+  };
+}
+function offerFile(blob, name, info) { // a file that took a while to make: Share opens the share menu with a fresh tap (phones only allow it straight after a tap)
+  const coarse = matchMedia('(pointer:coarse)').matches; let canShare = false, file = null;
+  try { file = new File([blob], name, { type: blob.type || 'application/octet-stream' }); canShare = coarse && !!navigator.canShare && navigator.canShare({ files: [file] }); } catch (e) {}
+  const ov = document.createElement('div'); ov.className = 'modal cmt-ov';
+  ov.innerHTML = `<div class="sheet cmt" role="dialog" aria-label="File ready"><h3 style="margin:0 0 4px">✓ Ready</h3>
+    <p style="margin:0 0 4px;font-size:.8rem;overflow-wrap:anywhere"><b>${esc(name)}</b></p><p class="small muted" style="margin:0 0 12px">${esc(info ? info + ' · ' : '')}${fmtMB(blob.size)}</p>
+    <div class="cal-foot"><button type="button" class="small" data-x="1">Close</button><button type="button" class="primary" data-s="1">${canShare ? 'Share / Save…' : 'Download'}</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.onclick = e => {
+    if (e.target === ov) return close();
+    const b = e.target.closest && e.target.closest('button'); if (!b) return;
+    if (b.dataset.x) return close();
+    if (canShare) navigator.share({ files: [file], title: name }).then(close).catch(err => { if (err && err.name !== 'AbortError') { saveLink(blob, name); close(); } }); // cancelled: the box stays, to try again
+    else { saveLink(blob, name); close(); }
   };
 }
 function downloadMany(files) {
