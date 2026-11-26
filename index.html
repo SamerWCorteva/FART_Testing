@@ -250,6 +250,7 @@ body.locked { overflow:hidden; }
 .camtop .seg { margin:0; }
 .camov button { color:inherit; }
 .camtop button.small, .camvbar button { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.35); color:#fff; }
+.camtop .camre { font-size:1.1rem; padding:.1rem .6rem; min-height:34px; flex:none; }
 .camtop .seg.mini { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.45); }
 .camtop .seg.mini button { color:#fff; background:transparent; }
 .camtop .seg.mini button.on { background:#fff; color:#000; }
@@ -294,6 +295,7 @@ body.locked { overflow:hidden; }
 .pbcam i { font-style:normal; font-size:.7rem; font-weight:800; margin-left:2px; color:var(--accent); }
 .pbcam.has { opacity:1; border-color:var(--accent); }
 .phhead { font-size:.78rem; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 2px; }
+.beta { display:inline-block; vertical-align:middle; font-size:.62rem; font-weight:800; letter-spacing:.08em; line-height:1; padding:.25rem .45rem; border-radius:6px; background:#ffd400; color:#1a1a1a; }
 .phgal { position:fixed; inset:0; z-index:60; background:var(--bg); display:flex; flex-direction:column; }
 .phgal > .top { flex:none; position:static; padding-top:calc(.7rem + env(safe-area-inset-top)); }
 .phgbody { flex:1; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding:12px 12px calc(16px + env(safe-area-inset-bottom)); }
@@ -462,7 +464,7 @@ button, a, .chip, label, input[type=checkbox], select, summary { touch-action:ma
 </div>
 <script>
 'use strict';
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 // keep APP_VERSION in step with VERSION in sw.js
 const cap = s => { s = String(s ?? ''); return s.charAt(0).toUpperCase() + s.slice(1); }; // first letter capital, used for titles and headers
 /* ---------- storage ---------- */
@@ -2615,13 +2617,15 @@ function pdfFile(t, list) {
     }
   }
   const sigIds = [...new Set(pages.filter(pg => pg.sig).map(pg => pg.sig.id))], sigObj = id => 5 + pages.length * 2 + sigIds.indexOf(id);
-  pages.forEach((pg, i) => { // header (assessment details + page x of y + signature) on every page
+  const logoW = 96, logoH = logoW * LOGO_JPG.h / LOGO_JPG.w, logoObj = 5 + pages.length * 2 + sigIds.length;
+  pages.forEach((pg, i) => { // header (assessment details + logo + signature) on every page; page x of y in the footer
     cur = pg.ops; let yy = H - M;
-    const lbl = `Page ${i + 1} of ${pages.length}`, lw = est(lbl, 10, true);
+    const lbl = `Page ${i + 1} of ${pages.length}`, lw = logoW;
     let sw = 0, sh = 0;
     if (pg.sig) { sh = 24; sw = sh * pg.sig.w / pg.sig.h; if (sw > 100) { sw = 100; sh = sw * pg.sig.h / pg.sig.w; } }
     pg.hdr.forEach((l, j) => { yy -= l.size; text(M, yy, fit(l.s, W - 2 * M - (j === 0 ? 90 + (pg.sig ? sw + 50 : 0) : 0), l.size, l.bold), l.size, l.bold); yy -= 3; if (j === 0 && pg.sig) yy -= SIGGAP; });
-    text(W - M - lw, H - M - 11, lbl, 10, true);
+    cur.push(`q ${f1(logoW)} 0 0 ${f1(logoH)} ${f1(W - M - logoW)} ${f1(H - M - logoH + 4)} cm /Logo Do Q`);
+    text(W - M - est(lbl, 9, true), 20, lbl, 9, true);
     if (pg.sig) {
       const x2 = W - M - lw - 14, x1 = x2 - sw, y0 = H - M + 2 - sh;
       text(x1 - est('Signed:', 8, true) - 4, y0 + sh / 2 - 3, 'Signed:', 8, true);
@@ -2638,11 +2642,12 @@ function pdfFile(t, list) {
   add(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
   pages.forEach((pg, i) => {
     const content = pg.ops.join('\n'), pn = 5 + i * 2;
-    add(pn, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >>${pg.sig ? ` /XObject << /Im${sigIds.indexOf(pg.sig.id) + 1} ${sigObj(pg.sig.id)} 0 R >>` : ''} >> /Contents ${pn + 1} 0 R >>`);
+    add(pn, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> /XObject << /Logo ${logoObj} 0 R${pg.sig ? ` /Im${sigIds.indexOf(pg.sig.id) + 1} ${sigObj(pg.sig.id)} 0 R` : ''} >> >> /Contents ${pn + 1} 0 R >>`);
     add(pn + 1, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
   });
   sigIds.forEach(id => { const sg = db.signatures[id] || pages.find(pg => pg.sig && pg.sig.id === id).sig, bin = atob(sg.gray); add(sigObj(id), `<< /Type /XObject /Subtype /Image /Width ${sg.w} /Height ${sg.h} /ColorSpace /DeviceGray /BitsPerComponent 8 /Length ${bin.length} >>\nstream\n${bin}\nendstream`); });
-  const total = 4 + pages.length * 2 + sigIds.length, xref = out.length;
+  { const bin = atob(LOGO_JPG.b64); add(logoObj, `<< /Type /XObject /Subtype /Image /Width ${LOGO_JPG.w} /Height ${LOGO_JPG.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${bin.length} >>\nstream\n${bin}\nendstream`); }
+  const total = 5 + pages.length * 2 + sigIds.length, xref = out.length;
   out += `xref\n0 ${total + 1}\n0000000000 65535 f \n` + offs.slice(1).map(o => String(o).padStart(10, '0') + ' 00000 n \n').join('');
   out += `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return { blob: new Blob([Uint8Array.from(out, c => c.charCodeAt(0))], { type: 'application/pdf' }), name: exportName(t, list.length === 1 ? list[0] : null) + '.pdf' };
@@ -3626,7 +3631,7 @@ const camModeOf = () => db.settings.camMode === 'phone' ? 'phone' : 'fart'; // F
 
 /* the Photos card on the trial page: one row per date (assessment dates, and days with photos only) */
 function photosCardHtml(t) {
-  return `<section class="card" id="ph-card"><h2>📷 Photos</h2>
+  return `<section class="card" id="ph-card"><h2>📷 Photos <span class="beta">BETA</span></h2>
     <p class="small muted" style="margin:0 0 10px">Take photos plot by plot. They are kept on this phone only – not in backups or shared files – so export them as a ZIP.</p>
     <button type="button" class="phquick" id="ph-today"><span class="phqt">📷 <b>Quick Photos – Today</b></span><span class="muted">no assessment</span><span class="phqa">›</span></button>
     <div class="phhead">By Assessment Date</div>
@@ -3669,7 +3674,7 @@ function openPhotoSetup(t, date) {
   const draw = () => {
     const n = only ? 1 : plotsAll.filter(p => sel.has(p.rep)).length;
     ov.innerHTML = `<div class="sheet cmt" role="dialog" aria-label="Take photos">
-      <h3 style="margin:0 0 2px">📷 Photos · ${esc(dmy(date))}</h3>
+      <h3 style="margin:0 0 2px">📷 Photos · ${esc(dmy(date))} <span class="beta">BETA</span></h3>
       <p class="small muted" style="margin:0 0 10px">${esc(t.trialId)}${day.as.length ? '' : ' · no assessment on this date – photos are filed under the day they are taken'}.</p>
       <b class="small">Plots</b>
       <div class="seg mini" style="margin:6px 0 8px"><button type="button" data-pm="walk" class="${only ? '' : 'on'}">Walk the Reps</button><button type="button" data-pm="one" class="${only ? 'on' : ''}">One Plot</button></div>
@@ -3761,7 +3766,7 @@ function openPhotoGallery(t, date) { // the trial's field map with each plot's p
   let rs = [], sel = null;
   const urls = new Map(), thumb = r => { if (!urls.has(r.id)) urls.set(r.id, URL.createObjectURL(r.thumb || r.blob)); return urls.get(r.id); };
   const box = document.createElement('div'); box.className = 'phgal';
-  box.innerHTML = `<header class="top"><button type="button" class="small" data-g="x">← Back</button><h1>Photos · ${esc(dmy(date))}</h1><span class="pill" id="pg-n"></span></header><div class="phgbody" id="pg-body"><p class="small muted" style="padding:16px">Loading…</p></div>`;
+  box.innerHTML = `<header class="top"><button type="button" class="small" data-g="x">← Back</button><h1>Photos · ${esc(dmy(date))} <span class="beta">BETA</span></h1><span class="pill" id="pg-n"></span></header><div class="phgbody" id="pg-body"><p class="small muted" style="padding:16px">Loading…</p></div>`;
   document.body.appendChild(box); scrollLock.on();
   const body = box.querySelector('#pg-body');
   const keyOf = (si, c) => isCustom(t) ? si * PK + c.plot : c.plot;
@@ -3808,8 +3813,8 @@ async function openCamera(t, day, walk, opt) {
   { const first = walk.findIndex(p => !recs.some(r => r.plot === p.plot)); idx = first < 0 ? 0 : first; } // start at the first plot without a photo
   const urls = new Map(); const urlOf = (r, full) => { const k = r.id + (full ? 'f' : 't'); if (!urls.has(k)) urls.set(k, URL.createObjectURL(full || !r.thumb ? r.blob : r.thumb)); return urls.get(k); };
   const ov = document.createElement('div'); ov.className = 'camov';
-  ov.innerHTML = `<div class="camtop"><button type="button" class="small" data-c="done">← Done</button><span class="camtitle">📷 ${esc(dmy(day.date))}</span>
-      <div class="seg mini"><button type="button" data-c="one">One</button><button type="button" data-c="multi">Multiple</button></div></div>
+  ov.innerHTML = `<div class="camtop"><button type="button" class="small" data-c="done">← Done</button><span class="camtitle"><span class="beta">BETA</span> <span style="font-size:.85rem">${esc(dmy(day.date).slice(0, 5))}</span></span>
+      <button type="button" class="small camre" data-c="restart" title="Restart the camera" aria-label="Restart the camera">↻</button><div class="seg mini"><button type="button" data-c="one">One</button><button type="button" data-c="multi">Multiple</button></div></div>
     <div class="cambar" id="cb"></div>
     <div class="camview" id="cv"><video id="vid" playsinline muted autoplay hidden></video><img id="last" alt="" hidden><div class="cammsg" id="cmsg"></div><div class="camflash" id="cflash"></div>
       <div class="camsave" id="csave" hidden><div class="camspin"></div><b>Saving photo…</b></div><div class="camok" id="cok" hidden></div></div>
@@ -3821,7 +3826,7 @@ async function openCamera(t, day, walk, opt) {
   const plotRecs = p => recs.filter(r => r.plot === p.plot).sort((x, y) => x.seq - y.seq);
   function draw() {
     const p = walk[idx], mine = plotRecs(p), done = walk.filter(w => recs.some(r => r.plot === w.plot)).length;
-    q('[data-c="one"]').classList.toggle('on', !multi); q('[data-c="multi"]').classList.toggle('on', multi);
+    q('[data-c="one"]').classList.toggle('on', !multi); q('[data-c="multi"]').classList.toggle('on', multi); q('[data-c="restart"]').hidden = cam !== 'fart';
     q('#cb').innerHTML = `<span class="plot-no">Plot ${pn(p.plot)}</span>${multiSet(t) ? `<span class="pill">${esc(setName(t, p.set))}</span>` : ''}<span class="plot-meta">Rep <b>${p.rep}</b>${db.settings.showTrt ? ` · <b>${esc(trtLabel(t, p.trt))}</b>` : ''}</span>
       <div class="small">${walk.length > 1 ? `${idx + 1} of ${walk.length} · ${done} plot${done === 1 ? '' : 's'} photographed · ` : ''}${mine.length ? `<b>${mine.length} photo${mine.length === 1 ? '' : 's'} here ✓</b>` : 'no photo here yet'}</div>`;
     q('#cth').innerHTML = mine.length ? mine.map(r => `<button type="button" class="camthumb" data-view="${r.id}"><img src="${urlOf(r)}" alt="Photo ${r.seq}"><i>${r.seq}</i></button>`).join('') : '<span class="small" style="opacity:.7">Photos of this plot appear here – tap one to view or delete it.</span>';
@@ -3838,9 +3843,23 @@ async function openCamera(t, day, walk, opt) {
       if (closed) { stopStream(); return; }
       vid.srcObject = stream; vid.hidden = false; q('#last').hidden = true; q('#cmsg').textContent = ''; await vid.play().catch(() => {});
       ic = window.ImageCapture ? new ImageCapture(stream.getVideoTracks()[0]) : null;
+      stream.getVideoTracks().forEach(tr => { tr.onended = () => restartStream('Camera restarted'); });
     } catch (e) { stream = null; q('#cmsg').innerHTML = `The FART camera could not start (${esc(e.name || e.message || 'blocked')}).<br>Allow camera access for this app, or use the phone's camera.<br><br><button type="button" class="small" data-c="usephone">Use the Phone Camera</button>`; }
   }
   function stopStream() { if (stream) stream.getTracks().forEach(tr => tr.stop()); stream = null; ic = null; vid.srcObject = null; }
+  async function restartStream(why) { if (cam !== 'fart' || closed) return; stopStream(); if (why) toast(why); await startStream(); }
+  // the live picture sometimes freezes (mostly on iPhones): if it stops moving, nudge it, then restart the camera – as closing and reopening it would
+  let lastT = -1, stillFor = 0;
+  const watch = setInterval(() => {
+    if (closed) { clearInterval(watch); return; }
+    if (cam !== 'fart' || !stream || busy || document.visibilityState !== 'visible' || ov.querySelector('.phviewer, .camviewer')) { stillFor = 0; return; }
+    const tr = stream.getVideoTracks()[0];
+    if (!tr || tr.readyState === 'ended') { restartStream('Camera restarted'); return; }
+    const ct = vid.currentTime;
+    if (ct === lastT || vid.paused) { stillFor++; if (stillFor === 2) vid.play().catch(() => {}); if (stillFor >= 4) { stillFor = 0; restartStream('The camera picture froze – restarted'); } }
+    else stillFor = 0;
+    lastT = ct;
+  }, 700);
   async function grab() { // full resolution where the browser allows it; otherwise the sharpest frame of the live picture
     if (ic) { try { const caps = await ic.getPhotoCapabilities(); return await ic.takePhoto(caps && caps.imageWidth ? { imageWidth: caps.imageWidth.max, imageHeight: caps.imageHeight.max } : {}); } catch (e) { try { return await ic.takePhoto(); } catch (e2) {} } }
     const cv = document.createElement('canvas'); cv.width = vid.videoWidth; cv.height = vid.videoHeight; if (!cv.width) throw new Error('The camera is not ready yet');
@@ -3897,6 +3916,7 @@ async function openCamera(t, day, walk, opt) {
     else if (c === 'prev' && idx > 0) { idx--; draw(); }
     else if (c === 'next' && idx < walk.length - 1) { idx++; draw(); }
     else if (c === 'grid') grid();
+    else if (c === 'restart') { if (cam === 'fart') restartStream('Camera restarted'); }
     else if (c === 'one' || c === 'multi') { multi = c === 'multi'; db.settings.photoMulti = multi; persistQuiet(); draw(); }
     else if (c === 'usephone') { cam = 'phone'; db.settings.camMode = 'phone'; persistQuiet(); q('#cmsg').textContent = ''; draw(); }
     else if (c === 'done') history.back();
