@@ -254,7 +254,7 @@ body.locked { overflow:hidden; }
 .camtop .seg.mini { background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.45); }
 .camtop .seg.mini button { color:#fff; background:transparent; }
 .camtop .seg.mini button.on { background:#fff; color:#000; }
-.sheet.cmt .chips button, .sheet.cmt .seg button { width:auto; margin:0; }
+.sheet.cmt .chips button, .sheet.cmt .seg button, .sheet.cmt .actions button { width:auto; margin:0; }
 .sheet.cmt .seg.mini { display:flex; width:max-content; max-width:100%; }
 .cambar { flex:none; text-align:center; padding:6px 10px; background:#111; line-height:1.25; }
 .cambar .plot-no { font-size:1.4rem; font-weight:800; margin-right:10px; }
@@ -464,7 +464,7 @@ button, a, .chip, label, input[type=checkbox], select, summary { touch-action:ma
 </div>
 <script>
 'use strict';
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 // keep APP_VERSION in step with VERSION in sw.js
 const cap = s => { s = String(s ?? ''); return s.charAt(0).toUpperCase() + s.slice(1); }; // first letter capital, used for titles and headers
 /* ---------- storage ---------- */
@@ -4074,7 +4074,8 @@ async function exportPhotosZip(t, date, btn) {
       entries.push({ name: base + '.pptx', blob: pres, crc: crc32(pb), size: pb.length, ts: Date.now() });
     } catch (e) { toast('The presentation could not be made on this phone – the ZIP has the photos only'); }
     if (btn) btn.textContent = 'Making ZIP…';
-    const zip = zipOfBlobs(entries), name = base + '.zip';
+    if (btn) btn.textContent = 'Preparing to share…';
+    const zip = new Blob([await zipOfBlobs(entries).arrayBuffer()], { type: 'application/zip' }), name = base + '.zip'; // one complete file in memory, ready for the share menu
     const info = `${rs.length} photo${rs.length === 1 ? '' : 's'}${entries.some(e => e.name.endsWith('.pptx')) ? ' + presentation' : ''} + photo list`;
     phZipMade[key] = { sig, blob: zip, name, info };
     const now = Date.now(); for (const r of rs) if (!r.exported) { r.exported = now; await photoPut(r); }
@@ -4183,12 +4184,13 @@ function offerFile(blob, name, info) { // a file that took a while to make: Shar
   const ov = document.createElement('div'); ov.className = 'modal cmt-ov';
   ov.innerHTML = `<div class="sheet cmt" role="dialog" aria-label="File ready"><h3 style="margin:0 0 4px">✓ Ready</h3>
     <p style="margin:0 0 4px;font-size:.8rem;overflow-wrap:anywhere"><b>${esc(name)}</b></p><p class="small muted" style="margin:0 0 12px">${esc(info ? info + ' · ' : '')}${fmtMB(blob.size)}</p>
-    <p class="small" id="of-msg" style="margin:0 0 10px" hidden></p>
+    <p class="small" id="of-msg" style="margin:0 0 6px" hidden></p><p class="small muted" id="of-why" style="margin:0 0 10px;font-size:.72rem" hidden></p>
     <div class="actions" id="of-alt" style="margin:0 0 10px" hidden><a class="btn small" href="${url}" download="${esc(name)}" target="_blank" rel="noopener">Open File</a><button type="button" class="small" data-reload="1">Reload FART</button></div>
     <div class="cal-foot"><button type="button" class="small" data-x="1">Close</button><button type="button" class="primary" data-s="1">${canShare ? 'Share / Save…' : 'Download'}</button></div></div>`;
   document.body.appendChild(ov);
   const msg = t => { const m = ov.querySelector('#of-msg'); m.textContent = t; m.hidden = !t; };
-  const alt = why => { ov.querySelector('#of-alt').hidden = false; msg(why); };
+  const alt = (why, err) => { ov.querySelector('#of-alt').hidden = false; msg(why); const w = ov.querySelector('#of-why'); if (err) { w.textContent = `Phone says: ${err.name || 'Error'}${err.message ? ' – ' + err.message : ''}`; w.hidden = false; } };
+  let tries = 0;
   const close = () => { ov.remove(); setTimeout(() => URL.revokeObjectURL(url), 60000); };
   ov.onclick = e => {
     if (e.target === ov) return close();
@@ -4196,13 +4198,15 @@ function offerFile(blob, name, info) { // a file that took a while to make: Shar
     if (b.dataset.x) return close();
     if (b.dataset.reload) { flushDraft(); location.reload(); return; } // everything is saved; reloading frees the phone's stuck share menu
     if (!canShare) { saveLink(blob, name); close(); return; }
-    let pr; try { pr = navigator.share({ files: [file], title: name }); } catch (err) { alt("The share menu could not open. Tap Open File, then use the phone's share button there."); return; }
+    tries++;
+    let pr; try { pr = navigator.share({ files: [file], title: name }); } catch (err) { alt("The share menu could not open. Tap Share / Save again, or Open File and use the phone's share button there.", err); return; }
     msg('');
     pr.then(close).catch(err => {
       if (err && err.name === 'AbortError') return; // cancelled: the box stays, to try again
       // iPhones sometimes never report that the last share (e.g. Save to Files) finished, and then refuse to open the menu again
       alt(err && err.name === 'InvalidStateError' ? "The phone hasn't finished the last share yet, so its share menu won't open again. Tap Reload FART (nothing is lost) and export again – or tap Open File and use the phone's share button there."
-        : "The share menu could not open. Tap Open File, then use the phone's share button there.");
+        : tries < 2 ? "The phone didn't open the share menu. Tap Share / Save again – the second try usually works."
+        : "The share menu still won't open. Tap Reload FART (nothing is lost) and export again, or tap Open File and use the phone's share button there.", err);
     });
   };
 }

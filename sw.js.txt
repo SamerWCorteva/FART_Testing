@@ -1,6 +1,6 @@
 // FART – Field Assessment Recording Tool: service worker (makes the app work offline)
 // keep VERSION in step with APP_VERSION in index.html
-const VERSION = 44;
+const VERSION = 45;
 const CACHE = `field-assessments-v${VERSION}`;
 const CORE = ['./', './index.html', './manifest.webmanifest']; // must be saved for the app to open offline
 const EXTRA = ['./icon-192.png', './icon-512.png', './apple-touch-icon.png']; // saved if they exist
